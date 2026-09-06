@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- 案2: 朱色の角印に「本」 -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d0392f"/><stop offset="1" stop-color="#a51f1f"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <rect x="64" y="64" width="384" height="384" rx="18" fill="none" stroke="#fff3e0" stroke-width="22"/>
+  <rect x="104" y="104" width="304" height="304" rx="8" fill="none" stroke="#fff3e0" stroke-width="6" opacity="0.6"/>
+  <text x="256" y="262" text-anchor="middle" dominant-baseline="central"
+        font-family="'Yu Mincho','游明朝','MS Mincho','Hiragino Mincho ProN',serif" font-weight="700" font-size="250" fill="#fff8ee">本</text>
+</svg>

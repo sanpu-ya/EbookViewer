@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- 案4: 縦書きページとページめくり -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f766e"/><stop offset="1" stop-color="#134e4a"/>
+    </linearGradient>
+    <linearGradient id="curl" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#cfd8d3"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <!-- ページ本体 (左下をめくる) -->
+  <path d="M116 84 H396 V428 H210 L116 334 Z" fill="#fbfaf5"/>
+  <!-- めくれ -->
+  <path d="M116 334 L210 428 Q140 420 116 334 Z" fill="url(#curl)"/>
+  <path d="M116 334 L210 428" stroke="#9aa8a2" stroke-width="4"/>
+  <!-- 縦書きの行 -->
+  <g stroke="#134e4a" stroke-width="14" stroke-linecap="round">
+    <line x1="352" y1="124" x2="352" y2="380"/>
+    <line x1="304" y1="124" x2="304" y2="300"/>
+    <line x1="256" y1="124" x2="256" y2="360"/>
+    <line x1="208" y1="124" x2="208" y2="270"/>
+    <line x1="160" y1="124" x2="160" y2="220"/>
+  </g>
+  <!-- 傍点 -->
+  <g fill="#e0592a">
+    <circle cx="330" cy="150" r="7"/><circle cx="330" cy="178" r="7"/><circle cx="330" cy="206" r="7"/>
+  </g>
+</svg>

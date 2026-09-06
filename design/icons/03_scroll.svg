@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- 案3: 掛け軸 (巻物) と落款 -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4ead3"/><stop offset="1" stop-color="#e6d8b4"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <!-- 軸 (上下の棒) -->
+  <rect x="110" y="66" width="292" height="30" rx="15" fill="#3b2a1e"/>
+  <rect x="110" y="416" width="292" height="30" rx="15" fill="#3b2a1e"/>
+  <!-- 紙 -->
+  <rect x="136" y="90" width="240" height="332" fill="#fffaf0" stroke="#c9b98f" stroke-width="4"/>
+  <!-- 縦書きの行 -->
+  <g stroke="#1f2a44" stroke-width="14" stroke-linecap="round">
+    <line x1="326" y1="126" x2="326" y2="360"/>
+    <line x1="280" y1="126" x2="280" y2="300"/>
+    <line x1="234" y1="126" x2="234" y2="378"/>
+    <line x1="188" y1="126" x2="188" y2="250"/>
+  </g>
+  <!-- 落款 -->
+  <rect x="160" y="336" width="52" height="52" rx="6" fill="#c8102e"/>
+  <rect x="172" y="348" width="28" height="28" fill="none" stroke="#fff3e0" stroke-width="5"/>
+</svg>
