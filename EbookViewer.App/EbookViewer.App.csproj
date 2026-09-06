@@ -36,4 +36,10 @@
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- ウィンドウ/タスクバー用アイコンと起動画面の画像。実行ファイルのアイコンは ApplicationIcon で埋め込む -->
+    <Content Include="Assets\app.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\app-icon.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

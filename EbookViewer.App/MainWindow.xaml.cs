@@ -69,6 +69,10 @@ public sealed partial class MainWindow : Window
         _readyFallbackTimer.IsRepeating = false;
         _readyFallbackTimer.Tick += (_, _) => HideLoading();
 
+        // タイトルバー・タスクバーのアイコン (未パッケージなので exe と同じ場所の .ico を指定する)
+        string iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico");
+        if (File.Exists(iconPath)) AppWindow.SetIcon(iconPath);
+
         if (_settings.WindowWidth >= 400 && _settings.WindowHeight >= 300)
         {
             AppWindow.Resize(new Windows.Graphics.SizeInt32((int)_settings.WindowWidth, (int)_settings.WindowHeight));

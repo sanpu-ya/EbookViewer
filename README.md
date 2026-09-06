@@ -65,7 +65,8 @@ EbookViewer.Core/          形式非依存の書籍モデルと各ローダー (
   Epub/EpubLoader.cs       EPUB (container.xml → OPF → nav/NCX)
   Mobi/                    PalmDB, MOBI ヘッダー/EXTH, INDX, PalmDOC/HUFF-CDIC 展開, KF7/KF8 ビルダー
   Rendering/               本文への CSS/JS 注入 (ContentPreparer) と viewer.css / viewer.js
-EbookViewer.App/           WinUI 3 アプリ (WebView2 に仮想ホスト https://book.local/ で本文を配信)
+EbookViewer.App/           WinUI 3 アプリ (WebView2 に仮想ホストで本文を配信)。Assets/app.ico がアプリアイコン
+design/icons/              アプリアイコンの SVG 原稿 (採用: 01_open-book.svg) と生成した app.ico
 EbookViewer.Tests/         xunit テスト (サンプル書籍は青空文庫『機械』横光利一、『奇巌城』ルブラン/菊池寛訳 (図版 4 枚))
 ```
 

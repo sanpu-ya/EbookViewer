@@ -104,7 +104,7 @@
                 <controls:WebView2 x:Name="Web" Visibility="Collapsed" />
 
                 <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12" MaxWidth="480">
-                    <FontIcon Glyph="&#xE736;" FontSize="56" Opacity="0.6" />
+                    <Image Source="ms-appx:///Assets/app-icon.png" Width="112" Height="112" HorizontalAlignment="Center" />
                     <TextBlock Text="電子書籍ビューアー" Style="{ThemeResource TitleTextBlockStyle}" HorizontalAlignment="Center" />
                     <TextBlock TextWrapping="Wrap" TextAlignment="Center" Opacity="0.8"
                                Text="EPUB / MOBI / AZW3 ファイルをここにドロップするか、「開く」から選択してください。日本語の本は縦書きで表示されます。" />
