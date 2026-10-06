@@ -37,15 +37,28 @@ protocol WebBridge: AnyObject {
 @Observable
 final class ReaderModel: BookContentProvider {
     var settings: ReaderSettings
-    private let positions: ReadingPositionStore
+    let positions: ReadingPositionStore
 
     private(set) var book: BookDocument?
-    private(set) var bookURL: URL?
+    var bookURL: URL?
     private(set) var spineIndex = -1
     private(set) var page = 0
     private(set) var pages = 1
     private(set) var tocItems: [TocItem] = []
     var selectedTocId: Int?
+
+    // コミック (操作は ReaderModel+Comic.swift)
+    var comic: ComicDocument?
+    var comicImages: ComicImageStore?
+    var comicPage = 0
+    /// 見開きの組み始めページ。「1 ページ進む / 戻る」で設定され、このページから (anchor, anchor+1) と組む。nil なら先頭から。
+    var comicPairAnchor: Int?
+    /// 表示倍率 (1 = フィット)。保存しない。
+    var comicZoom: Double = 1
+    /// コミック表示領域の大きさ (見開きの自動判定に使う)。ビューが更新する。
+    var comicViewport: CGSize = .zero
+    /// フォルダーを開いているとき、ページを後から読めるよう維持しているスコープ付きアクセスの URL。
+    @ObservationIgnored var comicScopedURL: URL?
 
     var isLoading = false
     var loadingText = String(localized: "Loading…")
@@ -58,7 +71,7 @@ final class ReaderModel: BookContentProvider {
     @ObservationIgnored weak var web: WebBridge?
     @ObservationIgnored private var pendingInitial = "{\"type\":\"page\",\"page\":0}"
     @ObservationIgnored private var pendingOpen: URL?
-    @ObservationIgnored private var loading = false
+    @ObservationIgnored var loading = false
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var readyFallbackTask: Task<Void, Never>?
 
@@ -117,6 +130,10 @@ final class ReaderModel: BookContentProvider {
 
     func openFile(_ url: URL) async {
         if loading { return }
+        if Self.isComicURL(url) {
+            await openComic(url)
+            return
+        }
         guard web != nil else { pendingOpen = url; return }
         loading = true
         showLoading(String(localized: "Loading… \(url.lastPathComponent)"))
@@ -127,6 +144,7 @@ final class ReaderModel: BookContentProvider {
         do {
             savePosition()
             let loaded = try await BookLoader.load(url: url)
+            closeComic()
             book = loaded
             bookURL = url
             settings.addRecent(url)
@@ -157,13 +175,30 @@ final class ReaderModel: BookContentProvider {
         book.spine.firstIndex { $0.linear } ?? 0
     }
 
+    /// 本文 (WebView) の表示を閉じる。コミックに切り替えるときに使う。
+    func closeBook() {
+        guard book != nil else { return }
+        readyFallbackTask?.cancel()
+        book = nil
+        spineIndex = -1
+        page = 0
+        pages = 1
+        tocItems = []
+        selectedTocId = nil
+        if let blank = URL(string: "about:blank") { web?.navigate(to: blank) }
+    }
+
     var bookTitle: String {
+        if let comic { return comic.title }
         guard let book, let bookURL else { return String(localized: "Table of Contents") }
         let t = book.metadata.title.trimmingCharacters(in: .whitespaces)
         return t.isEmpty ? bookURL.lastPathComponent : t
     }
 
-    var bookAuthor: String { book?.metadata.author ?? "" }
+    var bookAuthor: String {
+        if let comic { return comic.creators }
+        return book?.metadata.author ?? ""
+    }
 
     // MARK: - ナビゲーション
 
@@ -207,8 +242,13 @@ final class ReaderModel: BookContentProvider {
         goToSpine(spineIndex, initial: "{\"type\":\"fraction\",\"value\":\(fraction)}")
     }
 
-    func nextPage() { web?.evaluate("window.__ev && window.__ev.next()") }
-    func prevPage() { web?.evaluate("window.__ev && window.__ev.prev()") }
+    func nextPage() {
+        if comic != nil { comicNext() } else { web?.evaluate("window.__ev && window.__ev.next()") }
+    }
+
+    func prevPage() {
+        if comic != nil { comicPrev() } else { web?.evaluate("window.__ev && window.__ev.prev()") }
+    }
 
     /// 本文中のリンク (ebook:// または外部 URL)。
     func followLink(_ href: String) {
@@ -335,6 +375,8 @@ final class ReaderModel: BookContentProvider {
 
     func webNavigationFinished() {
         AppDirectories.trace("navigation finished spine=\(spineIndex)")
+        // 本を閉じた後の about:blank では何もしない (コミック表示からフォーカスを奪わない)
+        guard book != nil else { return }
         startReadyFallback(seconds: 4)
         web?.focus()
     }
@@ -375,7 +417,7 @@ final class ReaderModel: BookContentProvider {
     /// WebView へのファイルドロップや file:// への遷移は本として開く。
     func handleExternalNavigation(_ url: URL) {
         if url.isFileURL {
-            if BookLoader.isSupported(url) { Task { await openFile(url) } }
+            if Self.canOpen(url) { Task { await openFile(url) } }
         } else if url.scheme == "http" || url.scheme == "https" || url.scheme == "mailto" {
             Self.openExternal(url)
         }
@@ -446,13 +488,16 @@ final class ReaderModel: BookContentProvider {
         }
     }
 
+    /// ⌘+ / ⌘-。コミックでは拡大率を変える。
     func fontUp() {
+        if comic != nil { comicZoomIn(); return }
         settings.fontSizePx = min(48, settings.fontSizePx + 2)
         settings.save()
         reloadCurrent()
     }
 
     func fontDown() {
+        if comic != nil { comicZoomOut(); return }
         settings.fontSizePx = max(10, settings.fontSizePx - 2)
         settings.save()
         reloadCurrent()
@@ -491,7 +536,11 @@ final class ReaderModel: BookContentProvider {
 
     // MARK: - 表示更新・保存
 
-    private func updateStatus() {
+    func updateStatus() {
+        if comic != nil {
+            updateComicStatus()
+            return
+        }
         guard let book else {
             statusLeft = String(localized: "No book open")
             statusRight = ""
@@ -509,7 +558,7 @@ final class ReaderModel: BookContentProvider {
         statusRight = chapter + String(localized: "Page \(page + 1)/\(pages)")
     }
 
-    private func scheduleSave() {
+    func scheduleSave() {
         saveTask?.cancel()
         saveTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1))
@@ -519,6 +568,10 @@ final class ReaderModel: BookContentProvider {
     }
 
     func savePosition() {
+        if comic != nil {
+            saveComicPosition()
+            return
+        }
         guard book != nil, let bookURL, spineIndex >= 0 else { return }
         let fraction = pages > 1 ? Double(page) / Double(pages - 1) : 0
         positions.set(bookURL.path, spineIndex: spineIndex, fraction: fraction)
@@ -532,12 +585,12 @@ final class ReaderModel: BookContentProvider {
         settings.save()
     }
 
-    private func showLoading(_ text: String) {
+    func showLoading(_ text: String) {
         loadingText = text
         isLoading = true
     }
 
-    private func hideLoading() {
+    func hideLoading() {
         isLoading = false
     }
 }

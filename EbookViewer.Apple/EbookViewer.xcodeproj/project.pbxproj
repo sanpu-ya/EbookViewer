@@ -10,6 +10,11 @@
 		0F35181D782A4240E6611267 /* EbookViewerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C93F5FD3102B1AE41F8BF742 /* EbookViewerApp.swift */; };
 		1EBD9CEFA25BAEFCA5BAF87C /* BookSchemeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 238A91C12C8759DD28972C26 /* BookSchemeHandler.swift */; };
 		31F95C92DB8253C78BB01548 /* ReaderModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 124754E0570FF2D1CA8393A5 /* ReaderModel.swift */; };
+		350678733074E1A500F666AF /* PdfComicLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 350678723074E1A500F666AF /* PdfComicLoader.swift */; };
+		350678753074E1C100F666AF /* ComicImageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 350678743074E1C100F666AF /* ComicImageStore.swift */; };
+		350678773074E1CE00F666AF /* ComicThumbnailsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 350678763074E1CE00F666AF /* ComicThumbnailsView.swift */; };
+		350678793074E1F300F666AF /* ReaderModel+Comic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 350678783074E1F300F666AF /* ReaderModel+Comic.swift */; };
+		3506787B3074E21C00F666AF /* ComicReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3506787A3074E21C00F666AF /* ComicReaderView.swift */; };
 		478015061ADEBC6E2EDA75B9 /* BookWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9C622CEBD75B05B0E69AA96 /* BookWebView.swift */; };
 		48B1785C9A17E8F454503939 /* TocView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D710CB04DFDBA3081752DFFA /* TocView.swift */; };
 		4E065FEB2C93D81AADF890F8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 49C3A67077401ACE626C9E36 /* Assets.xcassets */; };
@@ -23,6 +28,11 @@
 		124754E0570FF2D1CA8393A5 /* ReaderModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderModel.swift; sourceTree = "<group>"; };
 		15052BD8A4B5D5DCF4B311D9 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		238A91C12C8759DD28972C26 /* BookSchemeHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookSchemeHandler.swift; sourceTree = "<group>"; };
+		350678723074E1A500F666AF /* PdfComicLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PdfComicLoader.swift; sourceTree = "<group>"; };
+		350678743074E1C100F666AF /* ComicImageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComicImageStore.swift; sourceTree = "<group>"; };
+		350678763074E1CE00F666AF /* ComicThumbnailsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComicThumbnailsView.swift; sourceTree = "<group>"; };
+		350678783074E1F300F666AF /* ReaderModel+Comic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderModel+Comic.swift"; sourceTree = "<group>"; };
+		3506787A3074E21C00F666AF /* ComicReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComicReaderView.swift; sourceTree = "<group>"; };
 		49C3A67077401ACE626C9E36 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		78E2B2E5BB3E136C3AA10410 /* ReaderSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSettings.swift; sourceTree = "<group>"; };
 		8CE1414C00C14CF0749883EB /* EbookCore */ = {isa = PBXFileReference; lastKnownFileType = folder; path = EbookCore; sourceTree = SOURCE_ROOT; };
@@ -90,6 +100,11 @@
 				124754E0570FF2D1CA8393A5 /* ReaderModel.swift */,
 				78E2B2E5BB3E136C3AA10410 /* ReaderSettings.swift */,
 				D710CB04DFDBA3081752DFFA /* TocView.swift */,
+				350678723074E1A500F666AF /* PdfComicLoader.swift */,
+				350678743074E1C100F666AF /* ComicImageStore.swift */,
+				350678763074E1CE00F666AF /* ComicThumbnailsView.swift */,
+				350678783074E1F300F666AF /* ReaderModel+Comic.swift */,
+				3506787A3074E21C00F666AF /* ComicReaderView.swift */,
 			);
 			path = EbookViewer;
 			sourceTree = "<group>";
@@ -174,8 +189,13 @@
 				1EBD9CEFA25BAEFCA5BAF87C /* BookSchemeHandler.swift in Sources */,
 				478015061ADEBC6E2EDA75B9 /* BookWebView.swift in Sources */,
 				DAA3FECF3165C1FC1392ADCA /* ContentView.swift in Sources */,
+				350678773074E1CE00F666AF /* ComicThumbnailsView.swift in Sources */,
+				350678733074E1A500F666AF /* PdfComicLoader.swift in Sources */,
+				350678793074E1F300F666AF /* ReaderModel+Comic.swift in Sources */,
 				0F35181D782A4240E6611267 /* EbookViewerApp.swift in Sources */,
+				350678753074E1C100F666AF /* ComicImageStore.swift in Sources */,
 				31F95C92DB8253C78BB01548 /* ReaderModel.swift in Sources */,
+				3506787B3074E21C00F666AF /* ComicReaderView.swift in Sources */,
 				EB8E637D0269F7FEF91D747F /* ReaderSettings.swift in Sources */,
 				48B1785C9A17E8F454503939 /* TocView.swift in Sources */,
 			);

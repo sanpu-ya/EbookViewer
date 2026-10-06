@@ -106,7 +106,43 @@ struct ReaderSettings: Codable {
     var tocOpen = false
     var recentFiles: [RecentFile] = []
 
+    // コミック
+    /// 読み方向: "auto" (ComicInfo の Manga に従う。不明なら右開き) / "rtl" (右開き、右から左へ) / "ltr"
+    var comicDirection = "auto"
+    /// ページ配置: "auto" (横長の画面なら見開き) / "single" / "double" / "webtoon" (縦スクロール)
+    var comicLayout = "auto"
+    /// 拡大方法: "page" (全体) / "width" (幅合わせ) / "height" (高さ合わせ)
+    var comicFit = "page"
+    /// 見開きのとき表紙 (1 ページ目) を単独で表示する
+    var comicCoverAlone = true
+    var comicInvert = false
+    var comicGrayscale = false
+    /// 背景: "black" / "white" / "theme"
+    var comicBackground = "black"
+
     private static var fileURL: URL { AppDirectories.data.appendingPathComponent("settings.json") }
+
+    init() {}
+
+    /// 旧バージョンの settings.json に無いキーは既定値のままにする (履歴などを失わないため)。
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        writingMode = try c.decodeIfPresent(String.self, forKey: .writingMode) ?? writingMode
+        fontSizePx = try c.decodeIfPresent(Double.self, forKey: .fontSizePx) ?? fontSizePx
+        fontKey = try c.decodeIfPresent(String.self, forKey: .fontKey) ?? fontKey
+        lineHeight = try c.decodeIfPresent(Double.self, forKey: .lineHeight) ?? lineHeight
+        theme = try c.decodeIfPresent(String.self, forKey: .theme) ?? theme
+        paddingPx = try c.decodeIfPresent(Int.self, forKey: .paddingPx) ?? paddingPx
+        tocOpen = try c.decodeIfPresent(Bool.self, forKey: .tocOpen) ?? tocOpen
+        recentFiles = try c.decodeIfPresent([RecentFile].self, forKey: .recentFiles) ?? recentFiles
+        comicDirection = try c.decodeIfPresent(String.self, forKey: .comicDirection) ?? comicDirection
+        comicLayout = try c.decodeIfPresent(String.self, forKey: .comicLayout) ?? comicLayout
+        comicFit = try c.decodeIfPresent(String.self, forKey: .comicFit) ?? comicFit
+        comicCoverAlone = try c.decodeIfPresent(Bool.self, forKey: .comicCoverAlone) ?? comicCoverAlone
+        comicInvert = try c.decodeIfPresent(Bool.self, forKey: .comicInvert) ?? comicInvert
+        comicGrayscale = try c.decodeIfPresent(Bool.self, forKey: .comicGrayscale) ?? comicGrayscale
+        comicBackground = try c.decodeIfPresent(String.self, forKey: .comicBackground) ?? comicBackground
+    }
 
     var fontFamilyCss: String {
         switch fontKey {
@@ -155,6 +191,8 @@ struct ReadingPosition: Codable {
     var spineIndex: Int
     var fraction: Double
     var updatedAt: Date
+    /// コミックの見開きの組み始めページ (1 ページ進む / 戻るで調整したもの)。本や未調整なら nil。
+    var comicAnchor: Int?
 }
 
 final class ReadingPositionStore {
@@ -179,8 +217,8 @@ final class ReadingPositionStore {
         positions[Self.key(path)]
     }
 
-    func set(_ path: String, spineIndex: Int, fraction: Double) {
-        positions[Self.key(path)] = ReadingPosition(spineIndex: spineIndex, fraction: fraction, updatedAt: Date())
+    func set(_ path: String, spineIndex: Int, fraction: Double, comicAnchor: Int? = nil) {
+        positions[Self.key(path)] = ReadingPosition(spineIndex: spineIndex, fraction: fraction, updatedAt: Date(), comicAnchor: comicAnchor)
     }
 
     func save() {

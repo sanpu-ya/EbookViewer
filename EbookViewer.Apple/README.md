@@ -9,6 +9,36 @@ Windows 版と同じです (EPUB 2/3、KF8 `.azw3` `.kf8`、ハイブリッド /
 PalmDOC / HUFF-CDIC 展開、IDPF・Adobe 方式のフォント難読化解除、`kindle:pos:fid` / `kindle:embed` / `kindle:flow` /
 `filepos` / `recindex` / `mbp:pagebreak` の変換も同じロジックを Swift に移植しています。DRM 付きのファイルは開けません。
 
+### コミック
+
+[OpenComic](https://github.com/ollm/OpenComic) を参考にしたコミックリーダーを内蔵しています。
+
+| 形式 | 備考 |
+|---|---|
+| `.cbz` / `.zip` | 自前の `ZipArchive` で展開。ファイル名の自然順 (`2.jpg` < `10.jpg`) に並べ、`__MACOSX` や隠しファイルは除外 |
+| `.cbr` / `.rar` | [Unrar.swift](https://github.com/mtgto/Unrar.swift) (unrar 同梱) で展開。RAR 4 / 5 に対応、ページは要求時に取り出す (パスワード付き・分割書庫は不可) |
+| 画像フォルダー | サブフォルダーも含めて相対パスの自然順に並べる。JPEG / PNG / GIF / WebP / BMP / TIFF / HEIC / AVIF / JXL |
+| `.pdf` | PDFKit で各ページを描画して画像として表示 (パスワード付きは不可) |
+| `.cb7` / `.cbt` | 7z / tar は展開できないため、CBZ への変換を促すエラーを表示 |
+
+機能: 右開き (マンガ) / 左開きの切替、単ページ・見開き (横長の画面では自動で見開き、横長ページと表紙は単独表示)・
+縦スクロール (Webtoon)、ページ全体 / 幅 / 高さへのフィット、ピンチ・⌘+ ⌘- による拡大、色の反転・グレースケール・背景色、
+サイドバーのサムネイル一覧、ページスライダー、読書位置の記憶。
+
+書庫やフォルダーに [ComicInfo.xml](https://github.com/anansi-project/comicinfo) (スキーマ v2.0 / v2.1) があれば読み取り、次のように使います。
+
+| ComicInfo | 反映先 |
+|---|---|
+| `Series` / `Number` / `Volume` / `Title` | 表示タイトル (`Series #3 – Title`) |
+| `Writer` / `Penciller` / `Inker` / `CoverArtist` | サイドバーの作者行 |
+| `Manga` | 読み方向が「自動」のとき、`YesAndRightToLeft` なら右開き、`Yes` / `No` なら左開き (未指定なら右開き) |
+| `Pages/Page` の `Type="FrontCover"` `"BackCover"` | 見開きにせず単独表示 (「表紙を単独で表示」が有効なとき) |
+| `Pages/Page` の `DoublePage="true"` | 見開きにせず単独表示 |
+| `Pages/Page` の `Type="Deleted"` | ページから除外 |
+| `Pages/Page` の `Bookmark` | サイドバー先頭のブックマーク一覧 (章ジャンプ) |
+
+`Page` の `Image` は書庫内の画像をファイル名順に並べたときの 0 始まりの番号として解釈します。複数の ComicInfo.xml があれば最も浅い階層のものを使います。
+
 ## 構成
 
 ```
@@ -22,11 +52,17 @@ EbookViewer.Apple/
     BookWebView.swift        WKWebView のラッパーと JS ブリッジ
     BookSchemeHandler.swift  ebook:// スキームで本文・画像・CSS を配信 (WebResourceRequested 相当)
     ReaderSettings.swift     設定・読書位置・最近開いたファイルの保存
-    TocView.swift            目次パネル
+    TocView.swift            目次パネル (コミックではページ一覧)
+    ReaderModel+Comic.swift  コミックの状態と操作 (見開きの組み立て、ページ送り、設定)
+    ComicReaderView.swift    コミックのページ表示 (単ページ / 見開き / 縦スクロール、ジェスチャー、キー操作)
+    ComicThumbnailsView.swift サイドバーのサムネイル一覧
+    ComicImageStore.swift    ページ画像のデコード (ImageIO で縮小) とキャッシュ・先読み
+    PdfComicLoader.swift     PDF を PDFKit でページ画像にする
     Info.plist / *.entitlements / Assets.xcassets
   EbookCore/                 形式非依存のコア (Swift Package、Linux でもテスト可能)
     Sources/EbookCore/
       Model/                 BookDocument / SpineItem / TocEntry / BookResource / PathUtil
+      Comic/                 ComicDocument / ComicPage と ComicLoader (CBZ / ZIP / CBR / RAR / フォルダー)
       Epub/                  ZipArchive (自前の ZIP 読み込み) と EpubLoader
       Mobi/                  PalmDB, MOBI ヘッダー/EXTH, INDX, PalmDOC/HUFF-CDIC 展開, KF7/KF8 ビルダー
       Rendering/             ContentPreparer (CSS/JS 注入) と Resources/viewer.css, viewer.js
@@ -58,6 +94,19 @@ Windows 版との対応:
 | 組方向 | ツールバー / ⌘⇧W (自動 → 縦書き → 横書き) | ツールバー |
 | テーマ・フォント・行間・余白 | ツールバー「表示」または「表示」メニュー | ツールバー「表示」 |
 | ツールバーを隠す | — | 画面中央をタップ |
+
+コミック表示中の操作:
+
+| 操作 | Mac | iPhone / iPad |
+|---|---|---|
+| 次 / 前のページ | ← → (読み方向に従う)、PageDown / PageUp、Space / Shift+Space、↓ / ↑、ホイール、画面端クリック、⌘] / ⌘[ | 画面端タップ、スワイプ |
+| 最初 / 最後のページ | Home / End | ページスライダー、ページ一覧 |
+| 読み方向 | ツールバー、`d`、⌘⇧D | ツールバー「コミック」 |
+| ページ配置 (単ページ / 見開き / 縦スクロール) | ツールバー、「コミック」メニュー | ツールバー「コミック」 |
+| 見開きを 1 ページずらす (1 ページ進む / 戻る) | ツールバー (見開き時)、Shift+← →、⌘⇧] / ⌘⇧[ | ツールバー「コミック」→「ページ配置」 |
+| 拡大 | ⌘+ / ⌘- / ⌘0、ピンチ、ダブルクリック | ピンチ、ダブルタップ |
+| 色の反転 / グレースケール / 背景 | ツールバー「画像」、⌘⇧I | ツールバー「コミック」 |
+| ページ一覧 | ⌘T / `t` (サイドバー) | ツールバー「ページ一覧」 |
 
 読書位置と設定は Application Support/EbookViewer/ の `positions.json` `settings.json` に保存され、次回同じファイルを開くと復元されます。
 「最近開いたファイル」はセキュリティスコープ付きブックマークで保持するので、サンドボックス内でも再度開けます。

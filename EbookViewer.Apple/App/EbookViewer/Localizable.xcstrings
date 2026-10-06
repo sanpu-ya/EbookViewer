@@ -1,6 +1,7 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%lld": {},
     "(No Recent Files)": {
       "localizations": {
         "ja": {
@@ -31,6 +32,66 @@
         }
       }
     },
+    "Auto (ComicInfo)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動 (ComicInfo)"
+          }
+        }
+      }
+    },
+    "Back One Page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 ページ戻る"
+          }
+        }
+      }
+    },
+    "Back One Page (⌘⇧[)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 ページ戻る (⌘⇧[)"
+          }
+        }
+      }
+    },
+    "Background": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "背景"
+          }
+        }
+      }
+    },
+    "Black": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "黒"
+          }
+        }
+      }
+    },
+    "Bookmarks": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブックマーク"
+          }
+        }
+      }
+    },
     "Chapter %lld/%lld": {
       "localizations": {
         "ja": {
@@ -47,6 +108,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "閉じる"
+          }
+        }
+      }
+    },
+    "Comic": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コミック"
           }
         }
       }
@@ -121,12 +192,12 @@
         }
       }
     },
-    "Drop an EPUB / MOBI / AZW3 file here or choose one with Open. Japanese books are shown in vertical writing.": {
+    "Drop an EPUB / MOBI / AZW3 book, a CBZ / CBR / PDF comic or a folder of images here, or choose one with Open. Japanese books are shown in vertical writing.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "EPUB / MOBI / AZW3 ファイルをここにドロップするか、「開く」から選択してください。日本語の本は縦書きで表示されます。"
+            "value": "EPUB / MOBI / AZW3 の本、CBZ / CBR / PDF のコミック、または画像フォルダーをここにドロップするか、「開く」で選んでください。日本語の本は縦書きで表示されます。"
           }
         }
       }
@@ -151,6 +222,66 @@
         }
       }
     },
+    "First Page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最初のページ"
+          }
+        }
+      }
+    },
+    "Fit Height": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高さに合わせる"
+          }
+        }
+      }
+    },
+    "Fit Page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページ全体"
+          }
+        }
+      }
+    },
+    "Fit Width": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "幅に合わせる"
+          }
+        }
+      }
+    },
+    "Fit and Zoom (⌘+ / ⌘- / ⌘0)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フィットと拡大率 (⌘+ / ⌘- / ⌘0)"
+          }
+        }
+      }
+    },
+    "Folder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダー"
+          }
+        }
+      }
+    },
     "Font": {
       "localizations": {
         "ja": {
@@ -161,12 +292,42 @@
         }
       }
     },
+    "Forward One Page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 ページ進む"
+          }
+        }
+      }
+    },
+    "Forward One Page (⌘⇧])": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 ページ進む (⌘⇧])"
+          }
+        }
+      }
+    },
     "Gothic (Sans-serif)": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "ゴシック"
+          }
+        }
+      }
+    },
+    "Grayscale": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グレースケール"
           }
         }
       }
@@ -191,6 +352,26 @@
         }
       }
     },
+    "Image": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像"
+          }
+        }
+      }
+    },
+    "Image Adjustments": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像の調整"
+          }
+        }
+      }
+    },
     "Increase Text Size": {
       "localizations": {
         "ja": {
@@ -211,12 +392,52 @@
         }
       }
     },
+    "Invert Colors": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "色を反転"
+          }
+        }
+      }
+    },
     "Larger": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "大"
+          }
+        }
+      }
+    },
+    "Last Page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最後のページ"
+          }
+        }
+      }
+    },
+    "Layout": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページ配置"
+          }
+        }
+      }
+    },
+    "Left to Right": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左から右"
           }
         }
       }
@@ -421,6 +642,36 @@
         }
       }
     },
+    "Page Layout": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページ配置"
+          }
+        }
+      }
+    },
+    "Pages": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページ一覧"
+          }
+        }
+      }
+    },
+    "Pages %lld–%lld/%lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページ %lld–%lld/%lld"
+          }
+        }
+      }
+    },
     "Previous": {
       "localizations": {
         "ja": {
@@ -437,6 +688,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "前のページ"
+          }
+        }
+      }
+    },
+    "Reading Direction": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み方向"
+          }
+        }
+      }
+    },
+    "Reading Direction (⌘⇧D)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み方向 (⌘⇧D)"
           }
         }
       }
@@ -471,6 +742,36 @@
         }
       }
     },
+    "Reset Zoom": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拡大率をリセット"
+          }
+        }
+      }
+    },
+    "Right to Left": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右から左"
+          }
+        }
+      }
+    },
+    "Right to Left (Manga)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右から左 (マンガ)"
+          }
+        }
+      }
+    },
     "Script error: %@": {
       "localizations": {
         "ja": {
@@ -487,6 +788,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "セピア"
+          }
+        }
+      }
+    },
+    "Show Cover Alone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表紙を単独で表示"
+          }
+        }
+      }
+    },
+    "Show Pages (⌘T)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページ一覧を表示 (⌘T)"
           }
         }
       }
@@ -511,6 +832,16 @@
         }
       }
     },
+    "Single Page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "単ページ"
+          }
+        }
+      }
+    },
     "Smaller": {
       "localizations": {
         "ja": {
@@ -527,6 +858,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "目次"
+          }
+        }
+      }
+    },
+    "The PDF has no pages.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この PDF にはページがありません。"
           }
         }
       }
@@ -591,12 +932,32 @@
         }
       }
     },
+    "Theme Color": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テーマの色"
+          }
+        }
+      }
+    },
     "Theme, Font, Line Spacing": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "テーマ・フォント・行間"
+          }
+        }
+      }
+    },
+    "This PDF is password protected.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この PDF はパスワードで保護されています。"
           }
         }
       }
@@ -631,6 +992,16 @@
         }
       }
     },
+    "Toggle Reading Direction": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み方向を切り替え"
+          }
+        }
+      }
+    },
     "Turn pages: tap the left or right edge / swipe": {
       "localizations": {
         "ja": {
@@ -651,12 +1022,42 @@
         }
       }
     },
+    "Two Pages": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "見開き"
+          }
+        }
+      }
+    },
     "Vertical": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "縦書き"
+          }
+        }
+      }
+    },
+    "Vertical Scroll (Webtoon)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "縦スクロール (Webtoon)"
+          }
+        }
+      }
+    },
+    "White": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "白"
           }
         }
       }
@@ -687,6 +1088,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "組方向 (自動 / 縦書き / 横書き)"
+          }
+        }
+      }
+    },
+    "Zoom": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拡大率"
+          }
+        }
+      }
+    },
+    "Zoom In": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拡大"
+          }
+        }
+      }
+    },
+    "Zoom Out": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "縮小"
           }
         }
       }

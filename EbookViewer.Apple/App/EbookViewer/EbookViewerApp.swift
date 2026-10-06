@@ -23,7 +23,7 @@ struct EbookViewerApp: App {
             ContentView(model: model)
                 .onOpenURL { url in
                     // Finder / Files からの「このアプリで開く」
-                    if BookLoader.isSupported(url) { model.requestOpen(url) }
+                    if ReaderModel.canOpen(url) { model.requestOpen(url) }
                 }
                 #if os(macOS)
                 .onAppear { appDelegate.attach(model) }
@@ -57,10 +57,10 @@ struct EbookViewerApp: App {
                 Divider()
                 Button("Next Page") { model.nextPage() }
                     .keyboardShortcut("]", modifiers: .command)
-                    .disabled(model.book == nil)
+                    .disabled(!model.hasContent)
                 Button("Previous Page") { model.prevPage() }
                     .keyboardShortcut("[", modifiers: .command)
-                    .disabled(model.book == nil)
+                    .disabled(!model.hasContent)
                 Divider()
                 Picker("Writing Mode", selection: Binding(get: { model.settings.writingMode }, set: { model.setWritingMode($0) })) {
                     ForEach(ReaderModel.writingModes, id: \.key) { m in
@@ -95,6 +95,50 @@ struct EbookViewerApp: App {
                     Text("Wide").tag(64)
                 }
             }
+            CommandMenu("Comic") {
+                Picker("Reading Direction", selection: Binding(get: { model.settings.comicDirection }, set: { model.setComicDirection($0) })) {
+                    ForEach(ReaderModel.comicDirections, id: \.key) { d in
+                        Text(d.label).tag(d.key)
+                    }
+                }
+                Button("Toggle Reading Direction") { model.toggleComicDirection() }
+                    .keyboardShortcut("d", modifiers: [.command, .shift])
+                Picker("Layout", selection: Binding(get: { model.settings.comicLayout }, set: { model.setComicLayout($0) })) {
+                    ForEach(ReaderModel.comicLayouts, id: \.key) { l in
+                        Text(l.label).tag(l.key)
+                    }
+                }
+                Toggle("Show Cover Alone", isOn: Binding(get: { model.settings.comicCoverAlone }, set: { model.setComicCoverAlone($0) }))
+                Button("Forward One Page") { model.comicShiftOnePage(forward: true) }
+                    .keyboardShortcut("]", modifiers: [.command, .shift])
+                    .disabled(!model.isComic)
+                Button("Back One Page") { model.comicShiftOnePage(forward: false) }
+                    .keyboardShortcut("[", modifiers: [.command, .shift])
+                    .disabled(!model.isComic)
+                Divider()
+                Picker("Zoom", selection: Binding(get: { model.settings.comicFit }, set: { model.setComicFit($0) })) {
+                    ForEach(ReaderModel.comicFits, id: \.key) { f in
+                        Text(f.label).tag(f.key)
+                    }
+                }
+                Button("Reset Zoom") { model.comicZoomReset() }
+                    .keyboardShortcut("0", modifiers: .command)
+                    .disabled(!model.isComic)
+                Divider()
+                Toggle("Invert Colors", isOn: Binding(get: { model.settings.comicInvert }, set: { model.setComicInvert($0) }))
+                    .keyboardShortcut("i", modifiers: [.command, .shift])
+                Toggle("Grayscale", isOn: Binding(get: { model.settings.comicGrayscale }, set: { model.setComicGrayscale($0) }))
+                Picker("Background", selection: Binding(get: { model.settings.comicBackground }, set: { model.setComicBackground($0) })) {
+                    ForEach(ReaderModel.comicBackgrounds, id: \.key) { b in
+                        Text(b.label).tag(b.key)
+                    }
+                }
+                Divider()
+                Button("First Page") { model.comicFirstPage() }
+                    .disabled(!model.isComic)
+                Button("Last Page") { model.comicLastPage() }
+                    .disabled(!model.isComic)
+            }
         }
     }
 }
@@ -109,7 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingURLs: [URL] = []
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard let url = urls.first(where: { BookLoader.isSupported($0) }) else { return }
+        guard let url = urls.first(where: { ReaderModel.canOpen($0) }) else { return }
         if let model {
             model.requestOpen(url)
         } else {

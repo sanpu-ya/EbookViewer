@@ -1,3 +1,6 @@
 "This book is protected by DRM and cannot be opened." = "この本は DRM で保護されているため開けません。";
 "Unsupported file format: %@" = "対応していないファイル形式です: %@";
 "File not found: %@" = "ファイルが見つかりません: %@";
+"Comic archives in this format (.%@) are not supported. Please convert it to CBZ." = "この形式のコミック書庫 (.%@) には対応していません。CBZ に変換してください。";
+"No images were found in %@." = "%@ に画像が見つかりません。";
+"This comic archive is password protected." = "このコミック書庫はパスワードで保護されています。";
