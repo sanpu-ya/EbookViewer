@@ -32,7 +32,7 @@ protocol WebBridge: AnyObject {
     func focus()
 }
 
-/// 画面の状態と操作。Windows 版の MainWindow.xaml.cs に相当する。
+/// 画面の状態と操作 (開いている本、現在の章・ページ、設定の反映、WebView との連携)。
 @MainActor
 @Observable
 final class ReaderModel: BookContentProvider {

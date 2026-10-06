@@ -1,6 +1,5 @@
 /* EbookViewer が本文に注入するページ送りスクリプト。
-   ホスト (WKWebView) とは window.webkit.messageHandlers.ev.postMessage / window.__ev.* でやり取りする。
-   (Windows 版の window.chrome.webview にも対応しているので同じファイルを両方で使える。) */
+   ホスト (WKWebView) とは window.webkit.messageHandlers.ev.postMessage / window.__ev.* でやり取りする。 */
 (function () {
   'use strict';
   if (window.__ev) { return; }
@@ -22,8 +21,6 @@
     try {
       if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ev) {
         window.webkit.messageHandlers.ev.postMessage(msg);
-      } else if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.postMessage(msg);
       }
     } catch (e) { /* ホスト無し (ブラウザで直接開いた場合) */ }
   }

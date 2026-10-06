@@ -1,6 +1,6 @@
 import Foundation
 
-/// Swift 標準 Regex の薄いラッパー。C# の Regex.Replace(evaluator) 相当の置換を提供する。
+/// Swift 標準 Regex の薄いラッパー。マッチごとにクロージャーで置換文字列を決める置換を提供する。
 struct Rx: @unchecked Sendable {
     /// 正規表現のオプション。
     struct Options: OptionSet, Sendable {

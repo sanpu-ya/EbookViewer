@@ -1,5 +1,0 @@
-<Solution>
-  <Project Path="EbookViewer.Core/EbookViewer.Core.csproj" />
-  <Project Path="EbookViewer.App/EbookViewer.App.csproj" />
-  <Project Path="EbookViewer.Tests/EbookViewer.Tests.csproj" />
-</Solution>

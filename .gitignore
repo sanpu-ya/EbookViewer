@@ -1,6 +1,6 @@
-bin/
-obj/
-.vs/
-*.user
-*.suo
-TestResults/
+.DS_Store
+.build/
+.swiftpm/
+xcuserdata/
+*.xcuserstate
+DerivedData/

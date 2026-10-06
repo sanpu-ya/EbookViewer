@@ -3,7 +3,7 @@ import Foundation
 import FoundationXML
 #endif
 
-/// XMLParser で組み立てる軽量 DOM。iOS には XMLDocument が無いので自前で持つ (C# の XDocument の代替)。
+/// XMLParser で組み立てる軽量 DOM。iOS には XMLDocument が無いので自前で持つ。
 final class XMLNode {
     let name: String
     let namespace: String
