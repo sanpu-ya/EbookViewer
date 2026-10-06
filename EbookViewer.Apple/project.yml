@@ -1,0 +1,71 @@
+# XcodeGen (https://github.com/yonaskolb/XcodeGen) 用のプロジェクト定義。
+# `xcodegen generate` で EbookViewer.xcodeproj を再生成できる。
+name: EbookViewer
+options:
+  bundleIdPrefix: com.sanpu-ya
+  deploymentTarget:
+    macOS: "14.0"
+    iOS: "17.0"
+  xcodeVersion: "15.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+  developmentLanguage: en
+  # 英語をベースにし、日本語は App/EbookViewer/Localizable.xcstrings (String Catalog) で訳す
+
+packages:
+  EbookCore:
+    path: EbookCore
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SWIFT_STRICT_CONCURRENCY: minimal
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  EbookViewer:
+    type: application
+    supportedDestinations: [macOS, iOS]
+    sources:
+      - path: App/EbookViewer
+        excludes:
+          - "Info.plist"
+          - "*.entitlements"
+    dependencies:
+      - package: EbookCore
+        product: EbookCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sanpu-ya.EbookViewer
+        PRODUCT_NAME: EbookViewer
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_FILE: App/EbookViewer/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        # macOS はサンドボックス + ユーザー選択ファイル読み取り。iOS は既定のまま (macOS 専用キーを含めない)
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/EbookViewer/EbookViewer.entitlements
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphone*]": App/EbookViewer/EbookViewer-iOS.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks @executable_path/Frameworks"
+
+schemes:
+  EbookViewer:
+    build:
+      targets:
+        EbookViewer: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

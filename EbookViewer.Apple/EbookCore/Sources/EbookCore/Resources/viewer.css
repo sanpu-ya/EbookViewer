@@ -1,0 +1,75 @@
+/* EbookViewer が本文に注入するページ分割用スタイル。
+   body を多段組みコンテナにし、1 段 = 1 ページとして扱う。
+   縦書きでは段が縦方向に積まれるので縦スクロール、横書きでは横スクロールでページを送る。 */
+
+html {
+  overflow: hidden !important;
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  writing-mode: horizontal-tb !important;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0 !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  max-width: none !important;
+  min-height: 0 !important;
+  column-fill: auto !important;
+  column-rule: none !important;
+  text-align: start;
+  overflow-wrap: break-word;
+}
+
+body.__ev-vertical {
+  writing-mode: vertical-rl !important;
+}
+
+body.__ev-horizontal {
+  writing-mode: horizontal-tb !important;
+}
+
+body img, body svg, body video {
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain;
+}
+
+/* 段 (ページ) の途中で画像が切れないようにする */
+body img, body figure, body svg {
+  break-inside: avoid;
+}
+
+/* MOBI の <mbp:pagebreak> や page-break-before から変換した改ページ */
+.__ev-pagebreak,
+.__ev-break-before {
+  break-before: column !important;
+}
+
+.__ev-break-after {
+  break-after: column !important;
+}
+
+/* ルビ */
+ruby {
+  ruby-align: center;
+}
+
+rt {
+  font-size: 0.5em;
+  line-height: 1;
+}
+
+/* 縦中横 */
+.tcy {
+  -webkit-text-combine: horizontal;
+  text-combine-upright: all;
+}
+
+/* リンクは本文色を邪魔しない程度に */
+a {
+  color: inherit;
+  text-decoration-color: rgba(120, 120, 120, 0.5);
+}
