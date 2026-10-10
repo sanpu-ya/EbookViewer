@@ -231,10 +231,32 @@ struct PlainTextExtractorTests {
         #expect(String(chars[3..<5]) == "太字")
     }
 
-    @Test func replacesImageWithPlaceholder() {
-        #expect(extract("<p>前<img src=\"a.png\" alt=\"図1\"/>後</p>").text == "前\n［図1］\n後")
-        let noAlt = extract("<p><img src=\"a.png\"/></p>").text
-        #expect(noAlt.hasPrefix("［") && noAlt.hasSuffix("］"))
+    @Test func takesImagesOutWithTheirPosition() {
+        // 本文には置き場所の 1 文字 (全角空白) だけが入る
+        let r = extract("<p>前<img src=\"a.png\" alt=\"図1\"/>後</p>")
+        #expect(r.text == "前\u{3000}後")
+        #expect(r.images == [ImageAnnotation(offset: 1, source: "a.png", alt: "図1", isBlock: false)])
+    }
+
+    @Test func imageAloneInABlockIsAnIllustration() {
+        // 段落に 1 つだけの画像は挿絵、本文に挟まれた画像は行内の画像
+        let r = extract("<p>本文</p><div><img src=\"plate.png\"/></div><p>あ<img src=\"gaiji.png\"/>い</p>")
+        #expect(r.text == "本文\n\u{3000}\nあ\u{3000}い")
+        #expect(r.images.map(\.isBlock) == [true, false])
+        #expect(r.images.map(\.source) == ["plate.png", "gaiji.png"])
+        let chars = Array(r.text)
+        #expect(chars[r.images[0].offset] == "\u{3000}")
+        #expect(chars[r.images[1].offset] == "\u{3000}")
+    }
+
+    @Test func takesImageSourceFromSvgHref() {
+        let r = extract("<div><image xlink:href=\"cover.jpg\"/></div>")
+        #expect(r.images.map(\.source) == ["cover.jpg"])
+    }
+
+    @Test func ignoresImagesWithoutASource() {
+        #expect(extract("<p>本文<img alt=\"なし\"/></p>").images.isEmpty)
+        #expect(extract("<p>本文<img alt=\"なし\"/></p>").text == "本文")
     }
 
     @Test func recordsAnchorPositions() {

@@ -211,6 +211,14 @@ open class STLabel: STPlatformView {
         annotations = rubyAnnotations + emphasisAnnotations.flatMap { $0.marks(avoiding: rubyAnnotations) }
     }
 
+    /// 本文に差し込む画像。置き場所は text の Character 位置で指定する。
+    open var imageAnnotations: [STImageAnnotation] = [] {
+        didSet {
+            guard imageAnnotations != oldValue else { return }
+            setNeedsLayout()
+        }
+    }
+
     /// 太字・斜体にする範囲。
     open var styleAnnotations: [STStyleAnnotation] = [] {
         didSet {
@@ -317,38 +325,96 @@ open class STLabel: STPlatformView {
         return last.line + 1
     }
 
+    /// ページ 1 つぶんの中身。挿絵は 1 ページを使う。
+    enum PageContent: Equatable {
+        /// 本文の行の範囲。
+        case text(Range<Int>)
+        /// imageAnnotations の添字。
+        case image(Int)
+    }
+
+    /// ページの並び。レイアウトのあとに作る。
+    private(set) var pages: [PageContent] = []
+
     /// 全ページ数。text を入れてレイアウトが終わったあとに確定する。
     open var pageCount: Int {
         guard isPaged else { return 1 }
-        let perPage = linesPerPage
-        return max(1, (layoutedLineCount + perPage - 1) / perPage)
+        return max(1, pages.count)
+    }
+
+    /// 行を 1 ページぶんずつに区切る。挿絵が載っている行は、その 1 ページを挿絵に使う。
+    private func makePages() -> [PageContent] {
+        guard isPaged else { return [] }
+        let perPage = max(1, linesPerPage)
+        let lineCount = layoutedLineCount
+
+        // 挿絵が載っている行
+        var imageLines: [Int: Int] = [:]
+        for (index, annotation) in imageAnnotations.enumerated() where annotation.isBlock {
+            guard annotation.offset >= 0, annotation.offset < context.runs.count else { continue }
+            imageLines[context.runs[annotation.offset].line] = index
+        }
+
+        var pages: [PageContent] = []
+        var start = 0
+        var line = 0
+        while line < lineCount {
+            if let image = imageLines[line] {
+                if line > start { pages.append(.text(start..<line)) }
+                pages.append(.image(image))
+                line += 1
+                start = line
+                continue
+            }
+            if line - start + 1 >= perPage {
+                pages.append(.text(start..<(line + 1)))
+                line += 1
+                start = line
+                continue
+            }
+            line += 1
+        }
+        if start < lineCount { pages.append(.text(start..<lineCount)) }
+        return pages.isEmpty ? [.text(0..<lineCount)] : pages
     }
 
     /// text の先頭から offset 文字目 (Character 単位) を含むページ。
     /// STParser は 1 文字 = 1 run で解析するので、run の添字がそのまま文字位置になる。
     open func page(ofCharacterAt offset: Int) -> Int {
         guard isPaged, offset >= 0, offset < context.runs.count else { return 0 }
-        return min(pageCount - 1, context.runs[offset].line / linesPerPage)
+        let line = context.runs[offset].line
+        for (index, page) in pages.enumerated() {
+            switch page {
+            case .text(let lines) where lines.contains(line): return index
+            case .image(let image) where imageAnnotations[image].offset == offset: return index
+            default: continue
+            }
+        }
+        return max(0, pageCount - 1)
     }
 
     private var clampedPageIndex: Int {
         min(max(0, pageIndex), max(0, pageCount - 1))
     }
 
-    /// 表示中のページが占める行の範囲。
+    /// 表示中のページの中身。
+    private var currentPage: PageContent {
+        guard isPaged, !pages.isEmpty else { return .text(0..<layoutedLineCount) }
+        return pages[clampedPageIndex]
+    }
+
+    /// 表示中のページが占める行の範囲 (挿絵のページなら空)。
     private var pageLineRange: Range<Int> {
-        let perPage = linesPerPage
-        let start = clampedPageIndex * perPage
-        return start ..< start + perPage
+        if case .text(let lines) = currentPage { return lines }
+        return 0..<0
     }
 
     /// 表示中のページを bounds に収め、ルビのぶんを空けるための描画位置のずれ。
     private var contentTranslation: CGPoint {
         // ページのぶん。縦書きは行が左へ積まれるので右へ、横書きは下へ積まれるので上へ戻す
         var distance: CGFloat = 0
-        let page = clampedPageIndex
-        if isPaged, page > 0 {
-            distance = context.adjustLineHeight * CGFloat(page * linesPerPage)
+        if isPaged, case .text(let lines) = currentPage, lines.lowerBound > 0 {
+            distance = context.adjustLineHeight * CGFloat(lines.lowerBound)
         }
         // ルビのぶん。1 行目の over 側のルビ (縦書きなら右端、横書きなら上端の外側) が
         // 切れないよう本文をずらす。under 側は最後の行の外側に要るので、
@@ -415,6 +481,8 @@ open class STLabel: STPlatformView {
 
         // 文字ごとの字面 (太字・斜体) を入れる。組む前に決まっていないといけない (EbookViewer)
         context.styles = makeStyles()
+        // 行の中に収める画像は、置き場所の 1 文字を画像の幅ぶんに広げる
+        context.spacings = makeImageSpacings()
 
         // Refresh font manager
         context.fontManager.refresh()
@@ -431,14 +499,35 @@ open class STLabel: STPlatformView {
         }
 
         // ルビを組む。ルビのほうが長い親文字は、ルビの長さまで広げて組み直す (EbookViewer)
+        let imageSpacings = context.spacings
         let rubyLayout = STRubyLayout(
             context: context, annotations: annotations, fontScale: rubyFontScale, allowsOverhang: allowsRubyOverhang)
-        let spacings = rubyLayout.spacings(context: context)
+        var spacings = rubyLayout.spacings(context: context)
         self.rubyLayout = rubyLayout
         if !spacings.isEmpty {
+            // 画像のぶんの空きは残す
+            for (index, spacing) in imageSpacings.enumerated() where index < spacings.count && spacing != .zero {
+                spacings[index] = spacing
+            }
             context.spacings = spacings
             STLayout(context: context).layout()
         }
+    }
+
+    /// 行の中に収める画像のぶん、置き場所の 1 文字を広げる。
+    private func makeImageSpacings() -> [STSpacing] {
+        let inline = imageAnnotations.filter { !$0.isBlock }
+        guard !inline.isEmpty, let text, !text.isEmpty else { return [] }
+        var spacings = [STSpacing](repeating: .zero, count: text.count)
+        for annotation in inline {
+            guard annotation.offset >= 0, annotation.offset < spacings.count else { continue }
+            // 置き場所は全角空白 1 文字 (= 1 em)。画像の形に合わせて後ろの空きで伸ばし縮みさせる。
+            // 極端に細い画像で枠が潰れないよう、1 文字の 1/4 までにとどめる
+            let wanted = annotation.inlineExtent(fontSize: context.adjustFontSize, direction: context.direction)
+            let extent = max(context.adjustFontSize * 0.25, wanted)
+            spacings[annotation.offset] = STSpacing(before: 0, after: extent - context.adjustFontSize)
+        }
+        return spacings
     }
 
     /// 範囲ごとの指定を、文字ごとの字面の配列にする。
@@ -478,6 +567,7 @@ open class STLabel: STPlatformView {
         var emphasisAnnotations: [STEmphasisAnnotation]
         var styleAnnotations: [STStyleAnnotation]
         var allowsRubyOverhang: Bool
+        var images: [STImageAnnotation]
     }
 
     private var layoutSignature: LayoutSignature?
@@ -506,7 +596,8 @@ open class STLabel: STPlatformView {
             rubyAnnotations: rubyAnnotations,
             emphasisAnnotations: emphasisAnnotations,
             styleAnnotations: styleAnnotations,
-            allowsRubyOverhang: allowsRubyOverhang)
+            allowsRubyOverhang: allowsRubyOverhang,
+            images: imageAnnotations)
     }
 
     open override func sizeThatFits(_ size: CGSize) -> CGSize {
@@ -548,6 +639,7 @@ open class STLabel: STPlatformView {
             parseAndLayout()
             // ルビは親文字のレイアウトが決まってから、その脇に置く
             rubyRuns = rubyLayout?.runs(context: context) ?? []
+            pages = makePages()
             layoutSignature = signature
         }
 
@@ -760,9 +852,41 @@ open class STLabel: STPlatformView {
         flush()
     }
 
+    /// 挿絵のページを、表示領域に収まる大きさで中央に描く。
+    private func drawBlockImage(_ annotation: STImageAnnotation) {
+        guard let cgContext = UIGraphicsGetCurrentContext() else { return }
+        let rect = CGRect.fitting(aspectRatio: annotation.aspectRatio, in: bounds)
+        cgContext.drawFlipped(annotation.image, in: rect)
+    }
+
+    /// 行の中に収める画像を、置き場所の 1 文字の上に描く。
+    private func drawInlineImages(_ dirtyRect: CGRect) {
+        guard !imageAnnotations.isEmpty, let cgContext = UIGraphicsGetCurrentContext() else { return }
+        let lineRange: Range<Int>? = isPaged ? pageLineRange : nil
+        let translation = contentTranslation
+        for annotation in imageAnnotations where !annotation.isBlock {
+            guard annotation.offset >= 0, annotation.offset < context.runs.count else { continue }
+            let run = context.runs[annotation.offset]
+            if let lineRange {
+                guard lineRange.contains(run.line) else { continue }
+            } else if run.isHidden {
+                continue
+            }
+            let cell = run.frame.offsetBy(dx: translation.x, dy: translation.y)
+            cgContext.drawFlipped(annotation.image, in: .fitting(aspectRatio: annotation.aspectRatio, in: cell))
+        }
+    }
+
     open override func draw(_ dirtyRect: CGRect) {
+        // 挿絵のページは画像だけを描く
+        if isPaged, case .image(let index) = currentPage, index < imageAnnotations.count {
+            drawBlockImage(imageAnnotations[index])
+            return
+        }
+
         // Draw
         drawUnderlines(dirtyRect)
+        drawInlineImages(dirtyRect)
         drawGlyphs(dirtyRect)
 
         // For test

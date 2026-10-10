@@ -69,9 +69,14 @@ final class TextViewCoordinator: TextBridge {
 
     // MARK: - TextBridge
 
-    func show(_ content: ExtractedText, initial: InitialPosition) {
+    func show(_ book: BookText, initial: InitialPosition) {
+        let content = book.content
         anchors = content.anchors
         label.text = content.text
+        label.imageAnnotations = content.images.compactMap { annotation in
+            guard let image = book.images[annotation.offset] else { return nil }
+            return STImageAnnotation(offset: annotation.offset, image: image, isBlock: annotation.isBlock)
+        }
         label.rubyAnnotations = content.ruby.map {
             STRubyAnnotation(range: $0.range, text: $0.text, position: $0.position == .under ? .under : .over)
         }
@@ -96,6 +101,7 @@ final class TextViewCoordinator: TextBridge {
         currentPages = 1
         label.text = nil
         label.rubyAnnotations = []
+        label.imageAnnotations = []
         label.emphasisAnnotations = []
         label.styleAnnotations = []
         label.pageIndex = 0

@@ -63,6 +63,25 @@ public struct EmphasisAnnotation: Equatable, Sendable {
     }
 }
 
+/// 本文に差し込む画像。
+public struct ImageAnnotation: Equatable, Sendable {
+    /// 本文中の位置 (`ExtractedText.text` の Character 単位)。その 1 文字が画像の置き場所。
+    public let offset: Int
+    /// 画像のパス (本文ドキュメントからの相対)。
+    public let source: String
+    /// 代替文字列 (alt)。
+    public let alt: String
+    /// 段落に 1 つだけ置かれている挿絵か。false なら本文中の小さな画像 (外字など)。
+    public let isBlock: Bool
+
+    public init(offset: Int, source: String, alt: String, isBlock: Bool) {
+        self.offset = offset
+        self.source = source
+        self.alt = alt
+        self.isBlock = isBlock
+    }
+}
+
 /// 本文ドキュメントから取り出したプレーンテキスト。
 public struct ExtractedText: Sendable {
     /// 本文。段落の区切りは改行 1 つ、見出しなどの前後は空行になる。
@@ -76,19 +95,23 @@ public struct ExtractedText: Sendable {
     public let styles: [StyleAnnotation]
     /// `<em>` や傍点のクラスから取り出した圏点。
     public let emphasis: [EmphasisAnnotation]
+    /// `<img>` から取り出した画像。本文には置き場所として全角空白が 1 文字入る。
+    public let images: [ImageAnnotation]
 
     public init(
         text: String,
         anchors: [String: Int],
         ruby: [RubyAnnotation] = [],
         styles: [StyleAnnotation] = [],
-        emphasis: [EmphasisAnnotation] = []
+        emphasis: [EmphasisAnnotation] = [],
+        images: [ImageAnnotation] = []
     ) {
         self.text = text
         self.anchors = anchors
         self.ruby = ruby
         self.styles = styles
         self.emphasis = emphasis
+        self.images = images
     }
 }
 
@@ -360,13 +383,14 @@ public enum PlainTextExtractor {
             return
         }
 
-        // 画像
+        // 画像。本文には置き場所の 1 文字だけを入れ、実体は images で返す。
+        // 改行で囲まないので、段落に 1 つだけ置かれているか (挿絵か) は後から前後の改行で判断できる
         if tag.name == "img" || tag.name == "image" {
             guard !tag.isClose else { return }
+            let source = tag.attributes["src"] ?? tag.attributes["xlink:href"] ?? tag.attributes["href"] ?? ""
+            guard !source.isEmpty else { return }
             let alt = (tag.attributes["alt"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            builder.breakLines(1)
-            builder.append(contentsOf: "［" + (alt.isEmpty ? Localized.string("Image") : alt) + "］")
-            builder.breakLines(1)
+            builder.appendImage(source: source, alt: alt)
             return
         }
 
@@ -514,6 +538,8 @@ public enum PlainTextExtractor {
         private var wideCharacterCount = 0
         private var styles: [StyleAnnotation] = []
         private var emphasis: [EmphasisAnnotation] = []
+        /// 画像の (置き場所, パス, alt)。置き場所は本文を組み立て終わってから確定する。
+        private var images: [(offset: Int, source: String, alt: String)] = []
         private var ruby: [RubyAnnotation] = []
 
         var isDropping: Bool { droppingTag != nil }
@@ -588,6 +614,18 @@ public enum PlainTextExtractor {
             ruby.append(RubyAnnotation(range: rubyChunks[rubyReadingIndex], text: reading))
             rubyReadingIndex += 1
         }
+
+        /// 画像の置き場所として全角空白を 1 文字入れる。
+        /// 置き場所が決まる (= その 1 文字が出る) のは append の中なので、位置はそこで拾う。
+        mutating func appendImage(source: String, alt: String) {
+            guard !isDropping, rubyText == nil else { return }
+            pendingImage = (source, alt)
+            append("\u{3000}")
+            pendingImage = nil
+        }
+
+        /// いま置き場所を待っている画像。
+        private var pendingImage: (source: String, alt: String)?
 
         // MARK: 強調表示
 
@@ -705,6 +743,11 @@ public enum PlainTextExtractor {
             for i in emphasisStack.indices where emphasisStack[i].start == nil {
                 emphasisStack[i].start = count
             }
+            // 画像の置き場所も、畳み込んだ改行ではなくこの 1 文字
+            if let image = pendingImage {
+                images.append((offset: count, source: image.source, alt: image.alt))
+                pendingImage = nil
+            }
             emit(c)
         }
 
@@ -811,9 +854,18 @@ public enum PlainTextExtractor {
                 guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
                 return EmphasisAnnotation(range: range, mark: annotation.mark)
             }
+            // 置き場所の前後が改行 (または本文の端) なら、段落に 1 つだけ置かれた挿絵とみなす
+            let characters = Array(text)
+            let shiftedImages = images.compactMap { image -> ImageAnnotation? in
+                let offset = image.offset - leading
+                guard offset >= 0, offset < characters.count else { return nil }
+                let isAlone = (offset == 0 || characters[offset - 1].isNewline)
+                    && (offset == characters.count - 1 || characters[offset + 1].isNewline)
+                return ImageAnnotation(offset: offset, source: image.source, alt: image.alt, isBlock: isAlone)
+            }
             return ExtractedText(
                 text: text, anchors: adjusted, ruby: shifted,
-                styles: shiftedStyles, emphasis: shiftedEmphasis)
+                styles: shiftedStyles, emphasis: shiftedEmphasis, images: shiftedImages)
         }
     }
 }
