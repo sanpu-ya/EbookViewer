@@ -186,6 +186,8 @@ public struct ExtractedText: Sendable {
     public let warichu: [Range<Int>]
     /// 罫囲み (`<span class="keigakomi">`) にする範囲。
     public let boxes: [LineAnnotation]
+    /// 縦組みの中で横組みにするブロック (`<div class="yokogumi">`) の範囲。
+    public let horizontal: [Range<Int>]
     /// `<img>` から取り出した画像。本文には置き場所として全角空白が 1 文字入る。
     public let images: [ImageAnnotation]
 
@@ -202,6 +204,7 @@ public struct ExtractedText: Sendable {
         indents: [IndentAnnotation] = [],
         warichu: [Range<Int>] = [],
         boxes: [LineAnnotation] = [],
+        horizontal: [Range<Int>] = [],
         images: [ImageAnnotation] = []
     ) {
         self.text = text
@@ -216,6 +219,7 @@ public struct ExtractedText: Sendable {
         self.indents = indents
         self.warichu = warichu
         self.boxes = boxes
+        self.horizontal = horizontal
         self.images = images
     }
 }
@@ -265,6 +269,11 @@ public enum PlainTextExtractor {
     /// 字下げ・地付きがかかるブロック要素。
     static let indentContainerTags: Set<String> = ["div", "p", "blockquote", "li", "dd"]
 
+    /// ブロックとしてかかる要素か (行の中にかかる `<span>` などと区別する)。
+    static func isBlockContainer(tag: String) -> Bool {
+        indentContainerTags.contains(tag) || headingSizes[tag] != nil
+    }
+
     /// 見出しの大きさ。
     static let headingSizes: [String: Double] = [
         "h1": 1.60, "h2": 1.50, "h3": 1.40, "h4": 1.20, "h5": 1.10, "h6": 1.00,
@@ -291,6 +300,8 @@ public enum PlainTextExtractor {
         case warichu
         /// 罫囲み。
         case box(style: LineStyle)
+        /// 縦組みの中の横組み。ブロックなら 1 ページを使い、行の中なら縦中横にする。
+        case horizontal
         /// 太字・斜体。
         case style(TextStyle)
     }
@@ -368,6 +379,8 @@ public enum PlainTextExtractor {
             return .box(style: .dashed)
         case "warichu", "warichu_open", "warichu_close":
             return .warichu
+        case "yokogumi", "yoko", "horizontal":
+            return .horizontal
         case "tcy":
             return .tateChuYoko
         case "futoji", "gothic", "goth", "b", "bold":
@@ -479,6 +492,13 @@ public enum PlainTextExtractor {
         let number = value.prefix { $0.isNumber || $0 == "." || $0 == "-" }
         guard let amount = Double(number) else { return nil }
         return value.dropFirst(number.count).hasPrefix("em") ? amount : nil
+    }
+
+    /// `style="writing-mode: horizontal-tb"` から、縦組みの中の横組みを読む。
+    static func isHorizontal(forStyle style: String) -> Bool {
+        let lowered = style.lowercased()
+        guard let range = lowered.range(of: "writing-mode") else { return false }
+        return lowered[range.upperBound...].drop { $0 == ":" || $0 == " " }.hasPrefix("horizontal")
     }
 
     /// `style="font-size: 140%"` や `1.4em` から大きさを読む。
@@ -909,6 +929,7 @@ public enum PlainTextExtractor {
         private var indents: [IndentAnnotation] = []
         private var warichu: [Range<Int>] = []
         private var boxes: [LineAnnotation] = []
+        private var horizontal: [Range<Int>] = []
         /// 画像の (置き場所, パス, alt)。置き場所は本文を組み立て終わってから確定する。
         private var images: [(offset: Int, source: String, alt: String)] = []
         private var ruby: [RubyAnnotation] = []
@@ -1021,10 +1042,13 @@ public enum PlainTextExtractor {
             }
             // class で指定されていればそれに従う (青空文庫の注記から変換されたもの)。
             // 青空文庫の HTML は class と style の両方を持つので、字下げは style を優先する
-            let decorations = PlainTextExtractor.decorations(forClass: open.className)
+            var decorations = PlainTextExtractor.decorations(forClass: open.className)
                 .filter { if case .indent = $0, styleIndent != nil { return false } else { return true } }
+            if PlainTextExtractor.isHorizontal(forStyle: open.style), !decorations.contains(.horizontal) {
+                decorations.append(.horizontal)
+            }
             if !decorations.isEmpty {
-                for decoration in decorations { apply(decoration, to: range) }
+                for decoration in decorations { apply(decoration, to: range, tag: open.tag) }
                 return
             }
             if styleIndent != nil { return }
@@ -1058,7 +1082,9 @@ public enum PlainTextExtractor {
             }
         }
 
-        private mutating func apply(_ decoration: PlainTextExtractor.Decoration, to range: Range<Int>) {
+        private mutating func apply(
+            _ decoration: PlainTextExtractor.Decoration, to range: Range<Int>, tag: String
+        ) {
             switch decoration {
             case .emphasis(let mark, let position):
                 emphasis.append(EmphasisAnnotation(range: range, mark: mark, position: position))
@@ -1080,6 +1106,13 @@ public enum PlainTextExtractor {
                 warichu.append(range)
             case .box(let style):
                 boxes.append(LineAnnotation(range: range, style: style))
+            case .horizontal:
+                // ブロックの横組みは 1 ページを使う。行の中の短い横組みは縦中横にする
+                if PlainTextExtractor.isBlockContainer(tag: tag) {
+                    horizontal.append(range)
+                } else {
+                    tateChuYoko.append(range)
+                }
             }
         }
 
@@ -1304,11 +1337,12 @@ public enum PlainTextExtractor {
                 guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
                 return LineAnnotation(range: range, style: annotation.style)
             }
+            let shiftedHorizontal = horizontal.compactMap { shift($0, by: leading, limit: length) }
             return ExtractedText(
                 text: text, anchors: adjusted, ruby: shifted, styles: shiftedStyles,
                 emphasis: shiftedEmphasis, lines: shiftedLines, tateChuYoko: shiftedTateChuYoko,
                 sizes: shiftedSizes, shifts: shiftedShifts, indents: shiftedIndents, warichu: shiftedWarichu,
-                boxes: shiftedBoxes, images: shiftedImages)
+                boxes: shiftedBoxes, horizontal: shiftedHorizontal, images: shiftedImages)
         }
     }
 }

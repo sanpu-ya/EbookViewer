@@ -261,6 +261,16 @@ open class STLabel: STPlatformView {
         }
     }
 
+    /// 縦組みの中で横組みにするブロックの範囲 (青空文庫の「ここから横組み」)。
+    /// 1 本の流れの中に向きの違う組版は入れられないので、ブロックごとに別の STLabel で
+    /// 横に組み、挿絵と同じようにページを分けて表示する。横書き表示では何も起きない。
+    open var horizontalRanges: [Range<Int>] = [] {
+        didSet {
+            guard horizontalRanges != oldValue else { return }
+            setNeedsLayout()
+        }
+    }
+
     /// 縦中横にする範囲 (青空文庫の「縦組み中で横に並んだ文字」)。
     /// 横書きでは何も起きない。まとまりが 1 語として切り出されないと横に並ばないので、
     /// 数字や欧文の 2〜3 文字を想定している。
@@ -394,12 +404,14 @@ open class STLabel: STPlatformView {
         return last.line + 1
     }
 
-    /// ページ 1 つぶんの中身。挿絵は 1 ページを使う。
+    /// ページ 1 つぶんの中身。挿絵と横組みのブロックは 1 ページを使う。
     enum PageContent: Equatable {
         /// 本文の行の範囲。
         case text(Range<Int>)
         /// imageAnnotations の添字。
         case image(Int)
+        /// 横組みのブロック (horizontalLabels の添字と、そのブロックの中のページ)。
+        case horizontal(block: Int, page: Int)
     }
 
     /// ページの並び。レイアウトのあとに作る。
@@ -424,10 +436,30 @@ open class STLabel: STPlatformView {
             imageLines[context.runs[annotation.offset].line] = index
         }
 
+        // 横組みのブロックが載っている行。その行は縦組みでは出さず、横組みのページに置き換える
+        var horizontalLines: [Int: Int] = [:]
+        for (index, range) in horizontalBlockRanges.enumerated() {
+            for offset in range where offset < context.runs.count {
+                horizontalLines[context.runs[offset].line] = index
+            }
+        }
+        var placedBlocks = Set<Int>()
+
         var pages: [PageContent] = []
         var start = 0
         var line = 0
         while line < lineCount {
+            if let block = horizontalLines[line] {
+                if line > start { pages.append(.text(start..<line)) }
+                // ブロックの最初の行で、そのブロックのページをまとめて置く
+                if placedBlocks.insert(block).inserted {
+                    let count = block < horizontalLabels.count ? horizontalLabels[block].pageCount : 1
+                    for page in 0..<max(1, count) { pages.append(.horizontal(block: block, page: page)) }
+                }
+                line += 1
+                start = line
+                continue
+            }
             if let image = imageLines[line] {
                 if line > start { pages.append(.text(start..<line)) }
                 pages.append(.image(image))
@@ -451,6 +483,13 @@ open class STLabel: STPlatformView {
     /// STParser は 1 文字 = 1 run で解析するので、run の添字がそのまま文字位置になる。
     open func page(ofCharacterAt offset: Int) -> Int {
         guard isPaged, offset >= 0, offset < context.runs.count else { return 0 }
+        // 横組みのブロックの中なら、そのブロックのページを引く
+        if let block = horizontalBlockRanges.firstIndex(where: { $0.contains(offset) }) {
+            let inner = block < horizontalLabels.count
+                ? horizontalLabels[block].page(ofCharacterAt: offset - horizontalBlockRanges[block].lowerBound)
+                : 0
+            if let index = pages.firstIndex(of: .horizontal(block: block, page: inner)) { return index }
+        }
         let line = context.runs[offset].line
         for (index, page) in pages.enumerated() {
             switch page {
@@ -492,6 +531,125 @@ open class STLabel: STPlatformView {
         switch context.direction {
         case .tbRl: return .init(x: distance - ruby, y: 0)
         case .lrTb: return .init(x: 0, y: ruby - distance)
+        }
+    }
+
+    //--------------------------------------------------------------//
+    // MARK: - Horizontal block (EbookViewer)
+    //--------------------------------------------------------------//
+
+    /// 横組みのブロックを組んだ STLabel。ブロック 1 つにつき 1 つ、子ビューとして持つ。
+    private(set) var horizontalLabels: [STLabel] = []
+
+    /// 横組みのブロックの範囲 (horizontalLabels と同じ並び)。
+    private(set) var horizontalBlockRanges: [Range<Int>] = []
+
+    /// 横組みのブロックを組み直す。縦組みのときだけ働く。
+    private func updateHorizontalLabels() {
+        for label in horizontalLabels { label.removeFromSuperview() }
+        horizontalLabels = []
+        horizontalBlockRanges = []
+        guard context.direction == .tbRl, !horizontalRanges.isEmpty,
+              let text, !text.isEmpty, bounds.width > 0, bounds.height > 0 else { return }
+
+        let characters = Array(text)
+        // 範囲が重ならないよう、前から順に見て重なったものは捨てる
+        var placed: [Range<Int>] = []
+        for range in horizontalRanges.sorted(by: { $0.lowerBound < $1.lowerBound }) {
+            let lower = max(0, range.lowerBound)
+            let upper = min(characters.count, range.upperBound)
+            guard lower < upper, placed.last.map({ $0.upperBound <= lower }) ?? true else { continue }
+            placed.append(lower..<upper)
+        }
+
+        for range in placed {
+            let label = STLabel(frame: bounds)
+            label.direction = .lrTb
+            label.isPaged = isPaged
+            label.fontSize = fontSize
+            label.lineHeightScale = lineHeightScale
+            label.textAlign = textAlign
+            label.directionAlign = .start
+            label.punctuationMode = punctuationMode
+            label.isKinsokuAvailable = isKinsokuAvailable
+            label.isDividedByWords = isDividedByWords
+            label.textColor = textColor
+            label.backgroundColor = backgroundColor
+            label.allowsRubyOverhang = allowsRubyOverhang
+            label.rubyFontScale = rubyFontScale
+            for script in STScript.allCases {
+                label.setFontNames(fontNames(script: script), script: script)
+                label.setFontScale(fontScale(script: script), script: script)
+            }
+            label.text = String(characters[range])
+            label.rubyAnnotations = rubyAnnotations.compactMap { annotation in
+                clip(annotation.range, to: range).map {
+                    STRubyAnnotation(range: $0, text: annotation.text, position: annotation.position)
+                }
+            }
+            label.emphasisAnnotations = emphasisAnnotations.compactMap { annotation in
+                clip(annotation.range, to: range).map {
+                    STEmphasisAnnotation(range: $0, mark: annotation.mark, position: annotation.position)
+                }
+            }
+            label.styleAnnotations = styleAnnotations.compactMap { annotation in
+                clip(annotation.range, to: range).map {
+                    STStyleAnnotation(range: $0, style: annotation.style)
+                }
+            }
+            label.lineAnnotations = lineAnnotations.compactMap { annotation in
+                clip(annotation.range, to: range).map {
+                    STLineAnnotation(range: $0, style: annotation.style, position: annotation.position)
+                }
+            }
+            label.boxAnnotations = boxAnnotations.compactMap { annotation in
+                clip(annotation.range, to: range).map {
+                    STBoxAnnotation(range: $0, style: annotation.style)
+                }
+            }
+            label.sizeAnnotations = sizeAnnotations.compactMap { annotation in
+                clip(annotation.range, to: range).map {
+                    STSizeAnnotation(range: $0, scale: annotation.scale)
+                }
+            }
+            label.shiftAnnotations = shiftAnnotations.compactMap { annotation in
+                clip(annotation.range, to: range).map { STShiftAnnotation(range: $0, side: annotation.side) }
+            }
+            label.indentAnnotations = indentAnnotations.compactMap { annotation in
+                clip(annotation.range, to: range).map {
+                    STIndentAnnotation(
+                        range: $0, head: annotation.head, hanging: annotation.hanging, tail: annotation.tail)
+                }
+            }
+            label.warichuRanges = warichuRanges.compactMap { clip($0, to: range) }
+            label.imageAnnotations = imageAnnotations.compactMap { annotation in
+                guard range.contains(annotation.offset) else { return nil }
+                return STImageAnnotation(
+                    offset: annotation.offset - range.lowerBound, image: annotation.image,
+                    isBlock: annotation.isBlock)
+            }
+            addSubview(label)
+            label.layoutSubviews()
+            horizontalLabels.append(label)
+            horizontalBlockRanges.append(range)
+        }
+    }
+
+    /// 範囲をブロックの中に切り取り、ブロックの先頭からの位置に直す。重ならなければ nil。
+    private func clip(_ range: Range<Int>, to block: Range<Int>) -> Range<Int>? {
+        let lower = max(range.lowerBound, block.lowerBound)
+        let upper = min(range.upperBound, block.upperBound)
+        guard lower < upper else { return nil }
+        return (lower - block.lowerBound)..<(upper - block.lowerBound)
+    }
+
+    /// いま出すべき横組みのブロックだけを見せる。
+    private func updateHorizontalVisibility() {
+        var shown: (block: Int, page: Int)?
+        if isPaged, case .horizontal(let block, let page) = currentPage { shown = (block, page) }
+        for (index, label) in horizontalLabels.enumerated() {
+            label.isHidden = shown?.block != index
+            if let shown, shown.block == index { label.pageIndex = shown.page }
         }
     }
 
@@ -718,6 +876,7 @@ open class STLabel: STPlatformView {
         var indentAnnotations: [STIndentAnnotation]
         var warichuRanges: [Range<Int>]
         var tateChuYokoRanges: [Range<Int>]
+        var horizontalRanges: [Range<Int>]
         var allowsRubyOverhang: Bool
         var images: [STImageAnnotation]
     }
@@ -755,6 +914,7 @@ open class STLabel: STPlatformView {
             indentAnnotations: indentAnnotations,
             warichuRanges: warichuRanges,
             tateChuYokoRanges: tateChuYokoRanges,
+            horizontalRanges: horizontalRanges,
             allowsRubyOverhang: allowsRubyOverhang,
             images: imageAnnotations)
     }
@@ -798,6 +958,8 @@ open class STLabel: STPlatformView {
             parseAndLayout()
             // ルビは親文字のレイアウトが決まってから、その脇に置く
             rubyRuns = rubyLayout?.runs(context: context) ?? []
+            // 横組みのブロックは別の STLabel で組む (ページの並びを決める前に要る)
+            updateHorizontalLabels()
             pages = makePages()
             layoutSignature = signature
         }
@@ -870,6 +1032,9 @@ open class STLabel: STPlatformView {
     }
 
     private func createDrawBcukets() {
+        // 横組みのブロックは子ビューが描くので、出すものだけを見せる
+        updateHorizontalVisibility()
+
         // Decide page
         let lineRange: Range<Int>? = isPaged ? pageLineRange : nil
         let translation = contentTranslation
@@ -1099,6 +1264,8 @@ open class STLabel: STPlatformView {
             drawBlockImage(imageAnnotations[index])
             return
         }
+        // 横組みのページは子ビューが描く
+        if isPaged, case .horizontal = currentPage { return }
 
         // Draw
         drawBoxes(dirtyRect)

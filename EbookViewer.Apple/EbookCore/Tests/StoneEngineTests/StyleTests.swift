@@ -21,6 +21,7 @@ struct StyleTests {
         indents: [STIndentAnnotation] = [],
         warichu: [Range<Int>] = [],
         boxes: [STBoxAnnotation] = [],
+        horizontal: [Range<Int>] = [],
         emphasis: [STEmphasisAnnotation] = [],
         ruby: [STRubyAnnotation] = [],
         size: CGSize = CGSize(width: 400, height: 600),
@@ -43,6 +44,7 @@ struct StyleTests {
         label.indentAnnotations = indents
         label.warichuRanges = warichu
         label.boxAnnotations = boxes
+        label.horizontalRanges = horizontal
         label.emphasisAnnotations = emphasis
         label.rubyAnnotations = ruby
         label.layoutSubviews()
@@ -339,6 +341,68 @@ struct StyleTests {
         // すべて同じ位置 (行の幅の中央) に並んだまま
         let xs = Set(label.context.runs.map { ($0.frame.minX * 10).rounded() })
         #expect(xs.count == Set(label.context.runs.map(\.line)).count)
+    }
+
+    // MARK: - 縦組み中の横組み
+
+    /// 縦組みの本文に、横組みのブロックを 1 つ挟んだもの。
+    private func makeHorizontalSample(
+        direction: STDirection = .tbRl, size: CGSize = CGSize(width: 300, height: 300)
+    ) -> (label: STLabel, block: Range<Int>) {
+        let before = "たてぐみのほんぶん。\n"
+        let block = "よこぐみのぶろっく。\n"
+        let after = "またたてぐみにもどる。"
+        let range = before.count..<(before.count + block.count - 1)
+        let label = makeLabel(
+            before + block + after, horizontal: [range], size: size, direction: direction)
+        return (label, range)
+    }
+
+    @Test func horizontalBlockTakesAPageOfItsOwn() {
+        let (label, range) = makeHorizontalSample()
+        #expect(label.horizontalBlockRanges == [range])
+        // 横組みのブロックは別の STLabel に横書きで組まれる
+        let block = try! #require(label.horizontalLabels.first)
+        #expect(block.text == "よこぐみのぶろっく。")
+        #expect(block.direction == .lrTb)
+        // ブロックだけのページができる
+        let index = try! #require(label.pages.firstIndex(of: .horizontal(block: 0, page: 0)))
+        #expect(index > 0)
+        #expect(index < label.pageCount - 1)
+    }
+
+    @Test func horizontalBlockIsNotDrawnWithTheVerticalText() {
+        let (label, range) = makeHorizontalSample()
+        // 縦組みのページには、ブロックの文字は出ない
+        for page in 0..<label.pageCount {
+            label.pageIndex = page
+            guard case .text(let lines) = label.pages[page] else {
+                // 横組みのページでは親は何も描かない (子ビューが描く)
+                #expect(label.drawBuckets.isEmpty)
+                continue
+            }
+            for offset in range {
+                #expect(!lines.contains(label.context.runs[offset].line))
+            }
+        }
+    }
+
+    @Test func horizontalBlockLeadsToItsOwnPage() {
+        let (label, range) = makeHorizontalSample()
+        let index = try! #require(label.pages.firstIndex(of: .horizontal(block: 0, page: 0)))
+        // ブロックの中の文字は、そのブロックのページとして引ける
+        #expect(label.page(ofCharacterAt: range.lowerBound) == index)
+        #expect(label.page(ofCharacterAt: range.upperBound - 1) == index)
+        // 前後の本文は縦組みのページのまま
+        #expect(label.page(ofCharacterAt: 0) < index)
+        #expect(label.page(ofCharacterAt: range.upperBound + 1) > index)
+    }
+
+    @Test func horizontalBlockDoesNothingInHorizontalText() {
+        // 横書き表示では本文全体が横組みなので、ブロックを分ける必要が無い
+        let (label, _) = makeHorizontalSample(direction: .lrTb)
+        #expect(label.horizontalLabels.isEmpty)
+        #expect(!label.pages.contains { if case .horizontal = $0 { return true } else { return false } })
     }
 
     // MARK: - 上付き・下付き

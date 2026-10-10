@@ -376,6 +376,21 @@ struct PlainTextExtractorTests {
         #expect(indent.head == 2)
     }
 
+    @Test func takesHorizontalBlockFromClass() {
+        let r = extract("<p>縦</p><div class=\"yokogumi\">横組み</div><p>縦</p>")
+        #expect(r.text == "縦\n横組み\n縦")
+        #expect(r.horizontal == [2..<5])
+        // writing-mode の style からも読む
+        #expect(extract("<div style=\"writing-mode: horizontal-tb\">横</div>").horizontal == [0..<1])
+    }
+
+    @Test func inlineHorizontalBecomesTateChuYoko() {
+        // 行の中の短い横組みは、1 ページを使わず縦中横にする
+        let r = extract("<p>小さく書かれてある<span class=\"yokogumi\">スハフ</span></p>")
+        #expect(r.horizontal.isEmpty)
+        #expect(r.tateChuYoko == [9..<12])
+    }
+
     @Test func takesBoxFromClass() {
         #expect(extract("<p><span class=\"keigakomi\">囲み</span></p>").boxes
             == [LineAnnotation(range: 0..<2, style: .solid, position: .underline)])
