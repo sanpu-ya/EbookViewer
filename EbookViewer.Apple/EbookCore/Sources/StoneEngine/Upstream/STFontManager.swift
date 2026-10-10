@@ -68,7 +68,7 @@ extension STFontManager {
             var glyph: CGGlyph = 0
             if CTFontGetGlyphsForCharacters(ctFont, chars, &glyph, chars.count), 
                 glyph > 0, 
-                let index = possibleFontNames.firstIndex(of: fontName)
+                let index = fontId(name: fontName, script: script)
             {
                 return index
             }
@@ -76,6 +76,15 @@ extension STFontManager {
         
         // Use default font ID
         return 0
+    }
+    
+    /// 名前と文字種の両方が合う font ID (EbookViewer)。
+    ///
+    /// upstream は名前だけで引いていたが、同じフォントを 2 つの文字種に使う
+    /// (和欧で書体をそろえる) と、日本語の文字がラテン文字の font ID になってしまう。
+    /// すると縦書きでラテン文字あつかいになり、字が横に倒れてしまう。
+    private func fontId(name: String, script: STScript) -> Int? {
+        possibleFontNames.indices.first { possibleFontNames[$0] == name && possibleScripts[$0] == script }
     }
     
     func ctFont(fontId: Int, size: CGFloat, isClockwise: Bool = false, style: STTextStyle = []) -> CTFont {

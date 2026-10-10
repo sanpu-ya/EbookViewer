@@ -59,7 +59,11 @@ semantic color、`UIGraphicsGetCurrentContext()` を用意するので、これ�
    ページを送るたびに章全体を組み直さないためです。
 6. **ルビを足しました** (`rubyAnnotations` / `rubyFontScale` / `rubyExtent`)。詳細は下記。
 7. **強調表示を足しました** (`styleAnnotations` / `emphasisAnnotations`)。詳細は下記。
-8. **字間を足しました**。`STContext.spacings` に run ごとの前後の空きを入れると、`STLayout` が
+8. **同じフォントを 2 つの文字種に使えるようにしました**。upstream の `STFontManager.fontId(char:)`
+   はフォント名だけで font ID を引いていたので、和欧で書体をそろえようとして同じフォントを日本語と
+   ラテン文字の両方に指定すると、日本語の文字がラテン文字の font ID になり、縦書きで字が横に
+   倒れていました。名前と文字種の両方が合うものを引くようにしています。
+9. **字間を足しました**。`STContext.spacings` に run ごとの前後の空きを入れると、`STLayout` が
    その空きを含めて文字を送るようにしました (`layoutRunLrTb` / `layoutRunTbRl` の 3 か所と、
    次の語が入るかを見る `STContext.advance(token:)`)。ルビのほうが長い親文字を広げるのに使います。
 

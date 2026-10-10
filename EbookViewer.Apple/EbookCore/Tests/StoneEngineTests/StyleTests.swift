@@ -69,6 +69,26 @@ struct StyleTests {
         #expect(bold.context.runs[2].style == [])
     }
 
+    @Test func sharingAFontBetweenScriptsKeepsJapaneseUpright() {
+        // 和欧で書体をそろえるため、同じフォントを日本語とラテン文字の両方に指定することがある。
+        // このとき日本語の文字がラテン文字あつかいになって、縦書きで横に倒れてはいけない
+        let label = STLabel(frame: CGRect(x: 0, y: 0, width: 400, height: 400))
+        label.isPaged = true
+        label.direction = .tbRl
+        label.fontSize = 20
+        label.setFontNames(["HiraMinProN-W3", "YuMincho-Medium"], script: .japanese)
+        label.setFontNames(["HiraMinProN-W3", "Times-Roman"], script: .latin)
+        label.text = "あA"
+        label.layoutSubviews()
+        let japanese = label.context.runs[0]
+        #expect(label.context.fontManager.script(fontId: japanese.fontId) == .japanese)
+        #expect(!label.context.isClockwise(run: japanese))
+        // ラテン文字のほうは縦書きで倒す
+        let latin = label.context.runs[1]
+        #expect(label.context.fontManager.script(fontId: latin.fontId) == .latin)
+        #expect(label.context.isClockwise(run: latin))
+    }
+
     @Test func italicUsesASlantedFaceForLatin() {
         let label = makeLabel("ab", styles: [STStyleAnnotation(range: 0..<2, style: .italic)])
         #expect(fontNames(label) == ["HelveticaNeue-Italic"])
