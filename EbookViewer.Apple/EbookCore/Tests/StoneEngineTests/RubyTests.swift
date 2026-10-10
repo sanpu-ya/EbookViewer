@@ -91,6 +91,45 @@ struct RubyTests {
         #expect(label.rubyRuns.count == 7)
     }
 
+    @Test func widensTheBaseToFitALongerRuby() {
+        // 親文字 1 文字 (20pt) に 5 文字のルビ (5 * 10 = 50pt) を振る
+        let label = makeLabel("承る", ruby: [STRubyAnnotation(range: 0..<1, text: "うけたまわ")])
+        let base = label.context.runs[0]
+        // 親文字の占める長さがルビに合わせて広がる
+        #expect(abs(base.frame.height - 50) < 1)
+        // 文字そのものは広がった枠の中央に来る (外側の空きは内側の半分 = ここでは前後に 15pt ずつ)
+        let glyphTop = base.frame.minY + 15
+        #expect(abs(base.position.y - (glyphTop + 20 - label.context.fontManager.descent(fontId: base.fontId, size: 20))) < 0.5)
+        // ルビと親文字の長さがそろう
+        let ruby = label.rubyRuns
+        #expect(abs((ruby.map(\.frame.maxY).max()! - ruby.map(\.frame.minY).min()!) - base.frame.height) < 1)
+        #expect(abs(ruby.map(\.frame.minY).min()! - base.frame.minY) < 1)
+    }
+
+    @Test func widenedBaseShiftsTheFollowingText() {
+        let plain = makeLabel("承る", ruby: [])
+        let widened = makeLabel("承る", ruby: [STRubyAnnotation(range: 0..<1, text: "うけたまわ")])
+        // 「る」は広がったぶんだけ後ろにずれる
+        #expect(abs(widened.context.runs[1].frame.minY - plain.context.runs[1].frame.minY - 30) < 1)
+    }
+
+    @Test func doesNotWidenWhenRubyFits() {
+        // 2 文字の親文字 (40pt) に 4 文字のルビ (40pt) ならそのまま
+        let plain = makeLabel("寝静った", ruby: [])
+        let label = makeLabel("寝静った", ruby: [STRubyAnnotation(range: 0..<2, text: "ねしずま")])
+        #expect(label.context.runs.map(\.frame.height) == plain.context.runs.map(\.frame.height))
+    }
+
+    @Test func widenedBaseIsCountedWhenBreakingLines() {
+        // 1 行 60pt (3 文字) の幅に「承る」。親文字が 50pt に広がるので「る」は次の行へ送られる
+        let text = "承る"
+        let ruby = [STRubyAnnotation(range: 0..<1, text: "うけたまわ")]
+        #expect(makeLabel(text, ruby: [], size: CGSize(width: 400, height: 60)).layoutedLineCount == 1)
+        let widened = makeLabel(text, ruby: ruby, size: CGSize(width: 400, height: 60))
+        #expect(widened.layoutedLineCount == 2)
+        #expect(widened.context.runs[1].line == 1)
+    }
+
     @Test func longRubyStaysInsideTheLine() {
         // 行頭の 1 文字に長いルビを振っても、行の外へはみ出さない
         let label = makeLabel("鬱です", ruby: [STRubyAnnotation(range: 0..<1, text: "うつうつうつ")])

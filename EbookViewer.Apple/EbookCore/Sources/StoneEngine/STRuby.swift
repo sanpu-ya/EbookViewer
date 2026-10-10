@@ -6,6 +6,7 @@
 //
 //  ルビは親文字の脇 — 縦書きなら右、横書きなら上 — の行間に置く。行送りが
 //  親文字の大きさより大きいぶんの空きを使うので、行分割や禁則処理には手を入れない。
+//  ルビのほうが長いときだけ、親文字の字間を広げてルビの長さに合わせる。
 //
 
 #if canImport(UIKit)
@@ -27,6 +28,21 @@ public struct STRubyAnnotation: Equatable, Sendable {
     }
 }
 
+/// 文字の前後に足す空き。
+public struct STSpacing: Equatable, Sendable {
+    public var before: CGFloat
+    public var after: CGFloat
+
+    public static let zero = STSpacing(before: 0, after: 0)
+
+    public var total: CGFloat { before + after }
+
+    public init(before: CGFloat, after: CGFloat) {
+        self.before = before
+        self.after = after
+    }
+}
+
 /// 描画位置まで決まったルビの 1 文字。親文字の run (`STRun`) に対応するもの。
 struct STRubyRun {
     var fontId: Int
@@ -44,17 +60,154 @@ struct STRubyRun {
 /// ルビ自体の組版 (グリフの選択、縦書き用グリフへの置換、前進幅) は、親文字と同じ設定の
 /// 小さな `STContext` を作って `STParser` / `STLayout` に任せる。こうすると縦書きでの
 /// 字形の差し替えや欧文の回転がそのまま効き、ここで書き直す必要がない。
-enum STRubyLayout {
-    /// 親文字のレイアウトが済んだ `context` に対して、ルビの run を作る。
+///
+/// 使う順番は次のとおり。親文字を広げると行分割が変わるので、組版は 2 回に分かれる。
+///
+/// 1. 親文字をふつうに組む (`STLayout`)
+/// 2. `init` でルビを組む
+/// 3. `spacings(context:)` で親文字を広げる量を求め、空でなければ親文字を組み直す
+/// 4. `runs(context:)` でルビの置き場所を決める
+struct STRubyLayout {
+    /// ルビ 1 つを組んだ結果。
+    private struct Prepared {
+        var annotation: STRubyAnnotation
+        /// ルビの run。1 文字 = 1 run で、改行は含まない。
+        var runs: [STRun]
+        /// 文字が進む向きのルビの長さ。
+        var inlineLength: CGFloat
+        var isClockwise: [Bool]
+        var needsToFlip: [Bool]
+    }
+
+    private let prepared: [Prepared]
+    private let direction: STDirection
+
+    /// ルビをそれぞれ 1 行に組む。
     /// - Parameter fontScale: 親文字に対するルビの大きさの比 (0.5 なら半分)。
-    static func runs(context: STContext, annotations: [STRubyAnnotation], fontScale: CGFloat) -> [STRubyRun] {
-        guard !annotations.isEmpty, !context.runs.isEmpty, fontScale > 0 else { return [] }
-        let sub = makeSubContext(context, fontScale: fontScale)
-        var runs: [STRubyRun] = []
+    init(context: STContext, annotations: [STRubyAnnotation], fontScale: CGFloat) {
+        direction = context.direction
+        guard !annotations.isEmpty, fontScale > 0 else {
+            prepared = []
+            return
+        }
+        let sub = Self.makeSubContext(context, fontScale: fontScale)
+        var prepared: [Prepared] = []
         for annotation in annotations {
-            appendRuns(for: annotation, context: context, sub: sub, into: &runs)
+            guard !annotation.text.isEmpty else { continue }
+            let runs = Self.layout(reading: annotation.text, sub: sub)
+            guard !runs.isEmpty else { continue }
+            prepared.append(Prepared(
+                annotation: annotation,
+                runs: runs,
+                inlineLength: Self.bounds(of: runs, direction: sub.direction).inlineLength,
+                isClockwise: runs.map { sub.isClockwise(run: $0) },
+                needsToFlip: runs.map { sub.fontManager.needsToFlip(fontId: $0.fontId) }))
+        }
+        self.prepared = prepared
+    }
+
+    // MARK: - 親文字を広げる
+
+    /// ルビのほうが長い親文字を、ルビの長さまで広げるための字間を返す。
+    /// 広げる必要がどこにも無ければ空の配列を返す。
+    ///
+    /// 空きは JIS X 4051 の配置に倣い、親文字の外側が内側の半分になるように配る
+    /// (N 文字なら 0.5 : 1 : … : 1 : 0.5)。1 文字あたり前後に `余り / 2N` ずつ入れると
+    /// この配分になる。
+    func spacings(context: STContext) -> [STSpacing] {
+        guard !prepared.isEmpty, !context.runs.isEmpty else { return [] }
+        var spacings = [STSpacing](repeating: .zero, count: context.runs.count)
+        var needsToWiden = false
+        for ruby in prepared {
+            guard let range = Self.baseRange(ruby.annotation, in: context) else { continue }
+            let baseLength = range.reduce(CGFloat.zero) {
+                $0 + Self.inlineExtent(of: context.runs[$1].frame, direction: direction)
+            }
+            // 1pt に満たない差のために組み直さない
+            let extra = ruby.inlineLength - baseLength
+            guard extra > 1 else { continue }
+
+            let half = extra / CGFloat(range.count * 2)
+            for i in range {
+                spacings[i] = STSpacing(before: half, after: half)
+            }
+            needsToWiden = true
+        }
+        return needsToWiden ? spacings : []
+    }
+
+    // MARK: - 置き場所を決める
+
+    /// 組み終わった親文字の脇にルビを置く。
+    func runs(context: STContext) -> [STRubyRun] {
+        guard !prepared.isEmpty, !context.runs.isEmpty else { return [] }
+        var runs: [STRubyRun] = []
+        for ruby in prepared {
+            guard let range = Self.baseRange(ruby.annotation, in: context) else { continue }
+            // 親文字が行をまたぐことがあるので行ごとに分け、ルビも親文字の文字数に比例して分ける
+            let segments = Self.baseSegments(context: context, range: range)
+            var consumed = 0
+            for (index, segment) in segments.enumerated() {
+                let share: Int
+                if index == segments.count - 1 {
+                    share = ruby.runs.count - consumed
+                } else {
+                    let exact = Double(ruby.runs.count) * Double(segment.count) / Double(range.count)
+                    share = min(ruby.runs.count - consumed, max(1, Int(exact.rounded())))
+                }
+                guard share > 0 else { continue }
+                let piece = consumed..<(consumed + share)
+                consumed += share
+                place(ruby, piece: piece, over: segment, context: context, into: &runs)
+            }
         }
         return runs
+    }
+
+    /// ルビの一部を、その行の親文字の脇に置く。
+    private func place(
+        _ ruby: Prepared,
+        piece: Range<Int>,
+        over segment: Range<Int>,
+        context: STContext,
+        into runs: inout [STRubyRun]
+    ) {
+        let pieceRuns = Array(ruby.runs[piece])
+        guard !pieceRuns.isEmpty else { return }
+        let base = Self.bounds(of: context.runs[segment], direction: direction)
+        let rubyBounds = Self.bounds(of: pieceRuns, direction: direction)
+        let line = context.runs[segment.lowerBound].line
+
+        // 親文字の中央にそろえ、行の端からはみ出さないように寄せる
+        let inlineLimit = direction == .tbRl ? context.renderSize.height : context.renderSize.width
+        var inlineStart = base.inlineMin + (base.inlineLength - rubyBounds.inlineLength) * 0.5
+        if rubyBounds.inlineLength <= inlineLimit {
+            inlineStart = min(max(0, inlineStart), inlineLimit - rubyBounds.inlineLength)
+        } else {
+            inlineStart = 0
+        }
+
+        // 縦書きは親文字の右、横書きは親文字の上に置く
+        let translation: CGPoint
+        switch direction {
+        case .tbRl:
+            translation = CGPoint(x: base.blockMax - rubyBounds.blockMin, y: inlineStart - rubyBounds.inlineMin)
+        case .lrTb:
+            translation = CGPoint(x: inlineStart - rubyBounds.inlineMin,
+                                  y: base.blockMin - rubyBounds.blockLength - rubyBounds.blockMin)
+        }
+
+        for (offset, run) in pieceRuns.enumerated() {
+            let index = piece.lowerBound + offset
+            runs.append(STRubyRun(
+                fontId: run.fontId,
+                glyph: run.glyph,
+                position: CGPoint(x: run.position.x + translation.x, y: run.position.y + translation.y),
+                frame: run.frame.offsetBy(dx: translation.x, dy: translation.y),
+                isClockwise: ruby.isClockwise[index],
+                needsToFlip: ruby.needsToFlip[index],
+                line: line))
+        }
     }
 
     // MARK: - ルビ用のコンテキスト
@@ -83,48 +236,32 @@ enum STRubyLayout {
     /// 折り返させないための十分に大きな長さ。
     private static let unbounded: CGFloat = 1_000_000
 
-    /// ルビ 1 つぶんを組んで、親文字の行ごとに置く。
-    private static func appendRuns(
-        for annotation: STRubyAnnotation,
-        context: STContext,
-        sub: STContext,
-        into runs: inout [STRubyRun]
-    ) {
-        guard !annotation.text.isEmpty else { return }
+    /// ルビを 1 行に組んで、その run を返す。
+    private static func layout(reading: String, sub: STContext) -> [STRun] {
+        switch sub.direction {
+        case .tbRl: sub.renderSize = CGSize(width: sub.fontSize, height: unbounded)
+        case .lrTb: sub.renderSize = CGSize(width: unbounded, height: sub.fontSize)
+        }
+        sub.adjustFontScale = 1
+        STParser(context: sub).parse(text: reading)
+        STLayout(context: sub).layout()
+        return sub.runs.filter { !$0.char.isNewline }
+    }
+
+    // MARK: - 親文字の範囲
+
+    /// 親文字の範囲を run の範囲にする。範囲外なら切り詰め、空になるなら nil。
+    private static func baseRange(_ annotation: STRubyAnnotation, in context: STContext) -> Range<Int>? {
         let lower = max(0, annotation.range.lowerBound)
         let upper = min(context.runs.count, annotation.range.upperBound)
-        guard lower < upper else { return }
-
-        // 親文字が行をまたぐことがあるので、行ごとに分ける
-        let segments = baseSegments(context: context, range: lower..<upper)
-        guard !segments.isEmpty else { return }
-
-        // ルビを親文字の文字数に比例して行へ割り振る
-        let reading = Array(annotation.text)
-        let baseCount = upper - lower
-        var consumed = 0
-        for (index, segment) in segments.enumerated() {
-            let isLast = index == segments.count - 1
-            let share: Int
-            if isLast {
-                share = reading.count - consumed
-            } else {
-                let exact = Double(reading.count) * Double(segment.count) / Double(baseCount)
-                share = min(reading.count - consumed, max(1, Int(exact.rounded())))
-            }
-            guard share > 0 else { continue }
-            let piece = String(reading[consumed..<(consumed + share)])
-            consumed += share
-            appendRuns(reading: piece, over: segment, context: context, sub: sub, into: &runs)
-        }
+        return lower < upper ? lower..<upper : nil
     }
 
     /// 親文字の範囲を、同じ行に載っている run のかたまりに分ける。
     private static func baseSegments(context: STContext, range: Range<Int>) -> [Range<Int>] {
         var segments: [Range<Int>] = []
         var start = range.lowerBound
-        for i in range {
-            guard i > start else { continue }
+        for i in range where i > start {
             if context.runs[i].line != context.runs[start].line {
                 segments.append(start..<i)
                 start = i
@@ -134,59 +271,7 @@ enum STRubyLayout {
         return segments
     }
 
-    /// 1 行ぶんのルビを組んで、その行の親文字の脇に置く。
-    private static func appendRuns(
-        reading: String,
-        over segment: Range<Int>,
-        context: STContext,
-        sub: STContext,
-        into runs: inout [STRubyRun]
-    ) {
-        // ルビを 1 行に組む
-        switch sub.direction {
-        case .tbRl: sub.renderSize = CGSize(width: sub.fontSize, height: unbounded)
-        case .lrTb: sub.renderSize = CGSize(width: unbounded, height: sub.fontSize)
-        }
-        sub.adjustFontScale = 1
-        STParser(context: sub).parse(text: reading)
-        STLayout(context: sub).layout()
-        let rubyRuns = sub.runs.filter { !$0.char.isNewline }
-        guard !rubyRuns.isEmpty else { return }
-
-        // 親文字とルビのそれぞれの広がり
-        let base = bounds(of: context.runs[segment], direction: sub.direction)
-        let ruby = bounds(of: rubyRuns, direction: sub.direction)
-        let line = context.runs[segment.lowerBound].line
-
-        // 親文字の中央にそろえ、行の端からはみ出さないように寄せる
-        let inlineLimit = sub.direction == .tbRl ? context.renderSize.height : context.renderSize.width
-        var inlineStart = base.inlineMin + (base.inlineLength - ruby.inlineLength) * 0.5
-        if ruby.inlineLength <= inlineLimit {
-            inlineStart = min(max(0, inlineStart), inlineLimit - ruby.inlineLength)
-        } else {
-            inlineStart = 0
-        }
-
-        // 縦書きは親文字の右、横書きは親文字の上に置く
-        let translation: CGPoint
-        switch sub.direction {
-        case .tbRl:
-            translation = CGPoint(x: base.blockMax - ruby.blockMin, y: inlineStart - ruby.inlineMin)
-        case .lrTb:
-            translation = CGPoint(x: inlineStart - ruby.inlineMin, y: base.blockMin - ruby.blockLength - ruby.blockMin)
-        }
-
-        for run in rubyRuns {
-            runs.append(STRubyRun(
-                fontId: run.fontId,
-                glyph: run.glyph,
-                position: CGPoint(x: run.position.x + translation.x, y: run.position.y + translation.y),
-                frame: run.frame.offsetBy(dx: translation.x, dy: translation.y),
-                isClockwise: sub.isClockwise(run: run),
-                needsToFlip: sub.fontManager.needsToFlip(fontId: run.fontId),
-                line: line))
-        }
-    }
+    // MARK: - 広がり
 
     /// run の並びの、文字が進む向き (inline) と行が積まれる向き (block) それぞれの広がり。
     /// 縦書き (tbRl) は inline = y・block = x、横書き (lrTb) は inline = x・block = y。
@@ -196,6 +281,10 @@ enum STRubyLayout {
         var blockMin: CGFloat
         var blockMax: CGFloat
         var blockLength: CGFloat { blockMax - blockMin }
+    }
+
+    private static func inlineExtent(of frame: CGRect, direction: STDirection) -> CGFloat {
+        direction == .tbRl ? frame.height : frame.width
     }
 
     private static func bounds<S: Sequence<STRun>>(of runs: S, direction: STDirection) -> Bounds {

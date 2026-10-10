@@ -115,12 +115,13 @@ class STLayout {
                 }
             }
             
-            // Layout run
-            context.runs[runId].position = .init(x: posX, y: y)
+            // Layout run (EbookViewer: 親文字を広げるぶんの空きを前後に入れる)
+            let spacing = context.spacing(at: runId)
+            context.runs[runId].position = .init(x: posX + spacing.before, y: y)
             context.runs[runId].frame = .init(
                 x: x, 
                 y: y - context.fontManager.ascent(fontId: context.runs[runId].fontId, size: context.adjustFontSize), 
-                width: width, 
+                width: spacing.before + width + spacing.after, 
                 height: context.adjustFontSize * context.fontManager.fontScale(fontId: context.runs[runId].fontId))
         }
     }
@@ -143,15 +144,16 @@ class STLayout {
         }
         // For clockwise
         else if context.isClockwise(run: context.runs[runId]) {
-            // Layout run in clockwise
+            // Layout run in clockwise (EbookViewer: 親文字を広げるぶんの空きを前後に入れる)
+            let spacing = context.spacing(at: runId)
             context.runs[runId].position = .init(
                 x: x + context.fontManager.descent(fontId: context.runs[runId].fontId, size: context.adjustFontSize), 
-                y: y)
+                y: y + spacing.before)
             context.runs[runId].frame = .init(
                 x: x, 
                 y: y, 
                 width: context.adjustFontSize, 
-                height: context.runs[runId].advance.width)
+                height: spacing.before + context.runs[runId].advance.width + spacing.after)
         }
         // For not clockwise
         else {
@@ -209,22 +211,23 @@ class STLayout {
                 }
             }
             
-            // Layout run
+            // Layout run (EbookViewer: 親文字を広げるぶんの空きを前後に入れる)
+            let spacing = context.spacing(at: runId)
             if context.fontManager.needsToFlip(fontId: context.runs[runId].fontId) {
                 context.runs[runId].position = .init(
                     x: x, 
-                    y: y + context.adjustFontSize - context.fontManager.descent(fontId: context.runs[runId].fontId, size: context.adjustFontSize) * 0.5)
+                    y: y + spacing.before + context.adjustFontSize - context.fontManager.descent(fontId: context.runs[runId].fontId, size: context.adjustFontSize) * 0.5)
             }
             else {
                 context.runs[runId].position = .init(
                     x: x, 
-                    y: posY)
+                    y: posY + spacing.before)
             }
             context.runs[runId].frame = .init(
                 x: x, 
                 y: y, 
                 width: context.runs[runId].advance.width, 
-                height: height)
+                height: spacing.before + height + spacing.after)
         }
     }
     

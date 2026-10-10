@@ -207,8 +207,11 @@ open class STLabel: STPlatformView {
         rubyAnnotations.isEmpty ? 0 : context.adjustFontSize * rubyFontScale
     }
 
-    /// 組み終わったルビ。親文字のレイアウトのあとに作る。
+    /// 組み終わったルビ。親文字のレイアウトのあとに置き場所を決める。
     private(set) var rubyRuns: [STRubyRun] = []
+
+    /// 組んだルビ。親文字を広げる量を決めるのと、置き場所を決めるのに使い回す。
+    private var rubyLayout: STRubyLayout?
 
     //--------------------------------------------------------------//
     // MARK: - Page (EbookViewer)
@@ -346,6 +349,7 @@ open class STLabel: STPlatformView {
         // Set render size
         context.renderSize = bounds.size
         context.adjustFontScale = 1.0
+        context.spacings = []
 
         // Refresh font manager
         context.fontManager.refresh()
@@ -358,6 +362,15 @@ open class STLabel: STPlatformView {
         else {
             // Parse and layout
             STParser(context: context).parse(text: text)
+            STLayout(context: context).layout()
+        }
+
+        // ルビを組む。ルビのほうが長い親文字は、ルビの長さまで広げて組み直す (EbookViewer)
+        let rubyLayout = STRubyLayout(context: context, annotations: rubyAnnotations, fontScale: rubyFontScale)
+        self.rubyLayout = rubyLayout
+        let spacings = rubyLayout.spacings(context: context)
+        if !spacings.isEmpty {
+            context.spacings = spacings
             STLayout(context: context).layout()
         }
     }
@@ -448,7 +461,7 @@ open class STLabel: STPlatformView {
         if signature != layoutSignature {
             parseAndLayout()
             // ルビは親文字のレイアウトが決まってから、その脇に置く
-            rubyRuns = STRubyLayout.runs(context: context, annotations: rubyAnnotations, fontScale: rubyFontScale)
+            rubyRuns = rubyLayout?.runs(context: context) ?? []
             layoutSignature = signature
         }
 

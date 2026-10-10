@@ -54,14 +54,24 @@ open class STContext {
     // Render
     public var renderSize: CGSize = .zero
     public var renderedSize: CGSize = .zero
+
+    // Spacing (EbookViewer)
+    /// run ごとに前後へ足す空き。ルビが親文字より長いときに親文字を広げるのに使う。
+    /// 添字は run の添字。空なら字間を足さない。
+    public var spacings: [STSpacing] = []
+
+    /// runId の run の前後に足す空き。
+    public func spacing(at runId: Int) -> STSpacing {
+        runId >= 0 && runId < spacings.count ? spacings[runId] : .zero
+    }
     
     //--------------------------------------------------------------//
     // MARK: - Advance
     //--------------------------------------------------------------//
     
     public func advance(token: STToken) -> CGFloat {
-        // Calc with runs
-        return token.runIdRange.map({ runs[$0] }).reduce(0) { $0 + $1.advance.width }
+        // Calc with runs (EbookViewer: 親文字を広げたぶんも足す)
+        return token.runIdRange.reduce(0) { $0 + runs[$1].advance.width + spacing(at: $1).total }
     }
     
     //--------------------------------------------------------------//
