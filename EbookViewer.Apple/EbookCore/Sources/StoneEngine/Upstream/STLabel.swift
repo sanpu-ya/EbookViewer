@@ -219,6 +219,14 @@ open class STLabel: STPlatformView {
         }
     }
 
+    /// 割り注にする範囲。本文 1 行ぶんの幅の中に、半分の大きさで 2 行に組む。
+    open var warichuRanges: [Range<Int>] = [] {
+        didSet {
+            guard warichuRanges != oldValue else { return }
+            setNeedsLayout()
+        }
+    }
+
     /// 字下げ・地付きにする範囲。行の始まり (と終わり) に空きを作る。
     open var indentAnnotations: [STIndentAnnotation] = [] {
         didSet {
@@ -542,14 +550,22 @@ open class STLabel: STPlatformView {
             context: context, annotations: annotations, fontScale: rubyFontScale, allowsOverhang: allowsRubyOverhang)
         var spacings = rubyLayout.spacings(context: context)
         self.rubyLayout = rubyLayout
-        if !spacings.isEmpty {
-            // 画像のぶんの空きは残す
+        // 割り注は、2 行に積んだときの長さまで詰めてから組み直す
+        let warichuSpacings = STWarichuLayout.spacings(context: context, ranges: warichuRanges)
+        if !spacings.isEmpty || !warichuSpacings.isEmpty {
+            if spacings.isEmpty { spacings = [STSpacing](repeating: .zero, count: context.runs.count) }
+            // 画像と割り注のぶんの空きは残す
             for (index, spacing) in imageSpacings.enumerated() where index < spacings.count && spacing != .zero {
+                spacings[index] = spacing
+            }
+            for (index, spacing) in warichuSpacings.enumerated() where index < spacings.count && spacing != .zero {
                 spacings[index] = spacing
             }
             context.spacings = spacings
             STLayout(context: context).layout()
         }
+        // 組み終わった割り注を 2 行に積む
+        STWarichuLayout.apply(context: context, ranges: warichuRanges)
     }
 
     /// 行の中に収める画像のぶん、置き場所の 1 文字を広げる。
@@ -593,13 +609,20 @@ open class STLabel: STPlatformView {
 
     /// 範囲ごとの指定を、文字ごとの大きさの配列にする。重なっていたら後の指定を掛け合わせる。
     private func makeSizeScales() -> [CGFloat] {
-        guard !sizeAnnotations.isEmpty, let text, !text.isEmpty else { return [] }
+        guard !sizeAnnotations.isEmpty || !warichuRanges.isEmpty, let text, !text.isEmpty else { return [] }
         var scales = [CGFloat](repeating: 1, count: text.count)
         for annotation in sizeAnnotations {
             let lower = max(0, annotation.range.lowerBound)
             let upper = min(scales.count, annotation.range.upperBound)
             guard lower < upper, annotation.scale > 0 else { continue }
             for i in lower..<upper { scales[i] *= annotation.scale }
+        }
+        // 割り注は本文の半分の大きさに決まっている
+        for range in warichuRanges {
+            let lower = max(0, range.lowerBound)
+            let upper = min(scales.count, range.upperBound)
+            guard lower < upper else { continue }
+            for i in lower..<upper { scales[i] = STWarichuLayout.fontScale }
         }
         return scales
     }
@@ -643,6 +666,7 @@ open class STLabel: STPlatformView {
         var lineAnnotations: [STLineAnnotation]
         var sizeAnnotations: [STSizeAnnotation]
         var indentAnnotations: [STIndentAnnotation]
+        var warichuRanges: [Range<Int>]
         var tateChuYokoRanges: [Range<Int>]
         var allowsRubyOverhang: Bool
         var images: [STImageAnnotation]
@@ -677,6 +701,7 @@ open class STLabel: STPlatformView {
             lineAnnotations: lineAnnotations,
             sizeAnnotations: sizeAnnotations,
             indentAnnotations: indentAnnotations,
+            warichuRanges: warichuRanges,
             tateChuYokoRanges: tateChuYokoRanges,
             allowsRubyOverhang: allowsRubyOverhang,
             images: imageAnnotations)

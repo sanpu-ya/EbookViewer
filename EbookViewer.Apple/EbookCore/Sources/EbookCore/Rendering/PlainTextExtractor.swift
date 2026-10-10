@@ -161,6 +161,8 @@ public struct ExtractedText: Sendable {
     public let sizes: [SizeAnnotation]
     /// 字下げ・地付きの注記から取り出した、行の始まりと終わりの空き。
     public let indents: [IndentAnnotation]
+    /// 割り注 (`<span class="warichu">`) にする範囲。
+    public let warichu: [Range<Int>]
     /// `<img>` から取り出した画像。本文には置き場所として全角空白が 1 文字入る。
     public let images: [ImageAnnotation]
 
@@ -174,6 +176,7 @@ public struct ExtractedText: Sendable {
         tateChuYoko: [Range<Int>] = [],
         sizes: [SizeAnnotation] = [],
         indents: [IndentAnnotation] = [],
+        warichu: [Range<Int>] = [],
         images: [ImageAnnotation] = []
     ) {
         self.text = text
@@ -185,6 +188,7 @@ public struct ExtractedText: Sendable {
         self.tateChuYoko = tateChuYoko
         self.sizes = sizes
         self.indents = indents
+        self.warichu = warichu
         self.images = images
     }
 }
@@ -252,6 +256,8 @@ public enum PlainTextExtractor {
         case indent(Double)
         /// 地付き・地寄せ (行の終わりに空ける文字数)。
         case trailing(Double)
+        /// 割り注。
+        case warichu
         /// 太字・斜体。
         case style(TextStyle)
     }
@@ -296,6 +302,8 @@ public enum PlainTextExtractor {
         if let scale = sizeScale(forClassName: base) { return .size(scale) }
         if let indent = indentDecoration(forClassName: base) { return indent }
         switch base {
+        case "warichu", "warichu_open", "warichu_close":
+            return .warichu
         case "tcy":
             return .tateChuYoko
         case "futoji", "gothic", "goth", "b", "bold":
@@ -356,7 +364,7 @@ public enum PlainTextExtractor {
         case "chap2", "naka-midashi", "dogyo-naka-midashi", "mado-naka-midashi": return 1.20
         case "chap3", "ko-midashi", "dogyo-ko-midashi", "mado-ko-midashi": return 1.10
         // font-size: smaller 相当
-        case "notes", "caption", "kaeriten", "okurigana", "superscript", "subscript", "warichu",
+        case "notes", "caption", "kaeriten", "okurigana", "superscript", "subscript",
              "sup", "sub", "upr", "swr":
             return 0.83
         default: return nil
@@ -823,6 +831,7 @@ public enum PlainTextExtractor {
         private var tateChuYoko: [Range<Int>] = []
         private var sizes: [SizeAnnotation] = []
         private var indents: [IndentAnnotation] = []
+        private var warichu: [Range<Int>] = []
         /// 画像の (置き場所, パス, alt)。置き場所は本文を組み立て終わってから確定する。
         private var images: [(offset: Int, source: String, alt: String)] = []
         private var ruby: [RubyAnnotation] = []
@@ -983,6 +992,8 @@ public enum PlainTextExtractor {
                 indents.append(IndentAnnotation(range: range, head: head))
             case .trailing(let tail):
                 indents.append(IndentAnnotation(range: range, tail: tail))
+            case .warichu:
+                warichu.append(range)
             }
         }
 
@@ -1197,10 +1208,12 @@ public enum PlainTextExtractor {
                 guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
                 return IndentAnnotation(range: range, head: annotation.head, tail: annotation.tail)
             }
+            let shiftedWarichu = warichu.compactMap { shift($0, by: leading, limit: length) }
             return ExtractedText(
                 text: text, anchors: adjusted, ruby: shifted, styles: shiftedStyles,
                 emphasis: shiftedEmphasis, lines: shiftedLines, tateChuYoko: shiftedTateChuYoko,
-                sizes: shiftedSizes, indents: shiftedIndents, images: shiftedImages)
+                sizes: shiftedSizes, indents: shiftedIndents, warichu: shiftedWarichu,
+                images: shiftedImages)
         }
     }
 }

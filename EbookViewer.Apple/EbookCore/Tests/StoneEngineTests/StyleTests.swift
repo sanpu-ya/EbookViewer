@@ -18,6 +18,7 @@ struct StyleTests {
         tateChuYoko: [Range<Int>] = [],
         sizes: [STSizeAnnotation] = [],
         indents: [STIndentAnnotation] = [],
+        warichu: [Range<Int>] = [],
         emphasis: [STEmphasisAnnotation] = [],
         ruby: [STRubyAnnotation] = [],
         size: CGSize = CGSize(width: 400, height: 600),
@@ -37,6 +38,7 @@ struct StyleTests {
         label.tateChuYokoRanges = tateChuYoko
         label.sizeAnnotations = sizes
         label.indentAnnotations = indents
+        label.warichuRanges = warichu
         label.emphasisAnnotations = emphasis
         label.rubyAnnotations = ruby
         label.layoutSubviews()
@@ -230,6 +232,55 @@ struct StyleTests {
         let label = makeLabel("大事", emphasis: [STEmphasisAnnotation(range: 0..<2, position: .under)])
         let base = label.context.runs[0..<2]
         #expect(label.rubyRuns.allSatisfy { $0.frame.maxX <= base.map(\.frame.minX).min()! + 0.5 })
+    }
+
+    // MARK: - 割り注
+
+    @Test func warichuStacksTheTextInTwoRows() {
+        // 「注」4 文字を割り注にすると、前 2 文字と後ろ 2 文字が 2 行に並ぶ
+        let label = makeLabel("前わりちゅう後", warichu: [1..<5])
+        let runs = (1..<5).map { label.context.runs[$0] }
+        // 半分の大きさになる
+        #expect(runs.allSatisfy { abs($0.fontSize - 10) < 0.5 })
+        // 1 行目 (右) と 2 行目 (左) に 2 文字ずつ
+        let right = runs.filter { $0.frame.minX > runs.map(\.frame.minX).min()! + 0.5 }
+        let left = runs.filter { $0.frame.minX <= runs.map(\.frame.minX).min()! + 0.5 }
+        #expect(right.count == 2)
+        #expect(left.count == 2)
+        // 2 行は本文 1 文字ぶんの幅に収まる
+        let base = label.context.runs[0].frame
+        #expect(runs.map(\.frame.minX).min()! >= base.minX - 0.5)
+        #expect(runs.map(\.frame.maxX).max()! <= base.maxX + 0.5)
+        // どちらの行も同じ位置から始まる
+        #expect(abs(right.map(\.frame.minY).min()! - left.map(\.frame.minY).min()!) < 0.5)
+    }
+
+    @Test func warichuTakesHalfTheRoomAlongTheLine() {
+        // 4 文字の割り注は、2 行に積むので本文 2 文字ぶんの長さで済む
+        let plain = makeLabel("前わりちゅう後")
+        let label = makeLabel("前わりちゅう後", warichu: [1..<5])
+        let after = label.context.runs[5]
+        #expect(abs(after.frame.minY - (label.context.runs[0].frame.maxY + 20)) < 1)
+        // ふつうに組むより後ろの文字が前に来る
+        #expect(after.frame.minY < plain.context.runs[5].frame.minY)
+    }
+
+    @Test func warichuWithAnOddCountPutsTheExtraOnTheFirstRow() {
+        let label = makeLabel("前わりちゅ後", warichu: [1..<4])
+        let runs = (1..<4).map { label.context.runs[$0] }
+        let minX = runs.map(\.frame.minX).min()!
+        #expect(runs.filter { $0.frame.minX > minX + 0.5 }.count == 2)
+        #expect(runs.filter { $0.frame.minX <= minX + 0.5 }.count == 1)
+    }
+
+    @Test func warichuIsLeftAloneWhenItCrossesALineBreak() {
+        // 行をまたぐと読み順が崩れるので積まない
+        let size = CGSize(width: 400, height: 40)
+        let label = makeLabel("あいうえお", warichu: [0..<5], size: size)
+        #expect(Set(label.context.runs.map(\.line)).count > 1)
+        // すべて同じ位置 (行の幅の中央) に並んだまま
+        let xs = Set(label.context.runs.map { ($0.frame.minX * 10).rounded() })
+        #expect(xs.count == Set(label.context.runs.map(\.line)).count)
     }
 
     // MARK: - 字下げ・地付き

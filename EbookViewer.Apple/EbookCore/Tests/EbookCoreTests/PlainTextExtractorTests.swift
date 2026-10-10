@@ -338,6 +338,14 @@ struct PlainTextExtractorTests {
         #expect(indent.head == 2)
     }
 
+    @Test func takesWarichuFromClass() {
+        let r = extract("<p>本文<span class=\"warichu\">これは注</span>に戻る</p>")
+        #expect(r.text == "本文これは注に戻る")
+        #expect(r.warichu == [2..<6])
+        // 大きさはエンジンが決めるので、サイズの指定は出さない
+        #expect(r.sizes.isEmpty)
+    }
+
     @Test func takesTateChuYokoFromClass() {
         let r = extract("<p>昭和<span class=\"tcy\">30</span>年</p>")
         #expect(r.text == "昭和30年")
