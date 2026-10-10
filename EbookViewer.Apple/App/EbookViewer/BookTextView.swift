@@ -72,7 +72,9 @@ final class TextViewCoordinator: TextBridge {
     func show(text: String, anchors: [String: Int], ruby: [RubyAnnotation], initial: InitialPosition) {
         self.anchors = anchors
         label.text = text
-        label.rubyAnnotations = ruby.map { STRubyAnnotation(range: $0.range, text: $0.text) }
+        label.rubyAnnotations = ruby.map {
+            STRubyAnnotation(range: $0.range, text: $0.text, position: $0.position == .under ? .under : .over)
+        }
         pendingInitial = initial
         applyPendingInitial(needsLayout: true)
     }

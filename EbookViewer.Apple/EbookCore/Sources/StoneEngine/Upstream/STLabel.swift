@@ -203,8 +203,16 @@ open class STLabel: STPlatformView {
     }
 
     /// 行の脇にルビのために空けておく幅。ルビが無ければ 0。
+    /// 二段ルビでは親文字の両側に要るので、上下 (縦書きでは左右) それぞれで数える。
+    open func rubyExtent(_ position: STRubyPosition) -> CGFloat {
+        rubyAnnotations.contains { $0.position == position && !$0.text.isEmpty }
+            ? context.adjustFontSize * rubyFontScale
+            : 0
+    }
+
+    /// 行の両脇にルビのために空けておく幅の合計。
     open var rubyExtent: CGFloat {
-        rubyAnnotations.isEmpty ? 0 : context.adjustFontSize * rubyFontScale
+        STRubyPosition.allCases.reduce(0) { $0 + rubyExtent($1) }
     }
 
     /// 組み終わったルビ。親文字のレイアウトのあとに置き場所を決める。
@@ -290,8 +298,10 @@ open class STLabel: STPlatformView {
         if isPaged, page > 0 {
             distance = context.adjustLineHeight * CGFloat(page * linesPerPage)
         }
-        // ルビのぶん。1 行目のルビ (縦書きなら右端、横書きなら上端の外側) が切れないよう本文をずらす
-        let ruby = rubyExtent
+        // ルビのぶん。1 行目の over 側のルビ (縦書きなら右端、横書きなら上端の外側) が
+        // 切れないよう本文をずらす。under 側は最後の行の外側に要るので、
+        // linesPerPage で幅を取り分けておけばずらさなくてよい
+        let ruby = rubyExtent(.over)
         switch context.direction {
         case .tbRl: return .init(x: distance - ruby, y: 0)
         case .lrTb: return .init(x: 0, y: ruby - distance)

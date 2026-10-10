@@ -1,15 +1,26 @@
 import Foundation
 
+/// ルビを親文字のどちら側に置くか。
+public enum RubyPosition: Sendable, Equatable {
+    /// 親文字の上 — 縦書きでは右。ふつうのルビ。
+    case over
+    /// 親文字の下 — 縦書きでは左。二段ルビ (`<rtc>`) の 2 段目。
+    case under
+}
+
 /// 親文字の範囲とそれに振るルビ (振り仮名)。
 public struct RubyAnnotation: Equatable, Sendable {
     /// 親文字の範囲 (`ExtractedText.text` の Character 単位、0 始まり)。
     public let range: Range<Int>
     /// ルビ。
     public let text: String
+    /// 親文字のどちら側に置くか。
+    public let position: RubyPosition
 
-    public init(range: Range<Int>, text: String) {
+    public init(range: Range<Int>, text: String, position: RubyPosition = .over) {
         self.range = range
         self.text = text
+        self.position = position
     }
 }
 
@@ -61,8 +72,8 @@ public enum PlainTextExtractor {
         "h1", "h2", "h3", "h4", "h5", "h6", "hr", "table",
     ]
 
-    /// 中身を捨てる要素。`<rtc>` はルビの二段目 (ローマ字など) で、親文字に重なるので捨てる。
-    private static let droppedTags: Set<String> = ["head", "script", "style", "rp", "rtc", "title"]
+    /// 中身を捨てる要素。
+    private static let droppedTags: Set<String> = ["head", "script", "style", "rp", "title"]
 
     /// 空白をそのまま残す要素。
     private static let preformattedTags: Set<String> = ["pre"]
@@ -230,11 +241,16 @@ public enum PlainTextExtractor {
             tag.isClose ? builder.endRuby() : builder.beginRuby()
             return
         case "rb":
-            // 親文字がいくつかに区切られている形 (<rb>漢</rb><rt>かん</rt><rb>字</rb><rt>じ</rt>)
-            if !tag.isClose { builder.beginRubyBase() }
+            // 親文字がいくつかに区切られている形。開きでも閉じでも、そこで親文字を区切る
+            // (<rb>漢</rb><rb>字</rb><rt>かん</rt><rt>じ</rt> のように <rb> が先に並ぶこともある)
+            builder.closeRubyBaseChunk()
             return
         case "rt":
             tag.isClose ? builder.endRubyText() : builder.beginRubyText()
+            return
+        case "rtc":
+            // 二段ルビ。<rtc> の中のルビは親文字の反対側に置く
+            tag.isClose ? builder.endRubyContainer() : builder.beginRubyContainer()
             return
         default:
             break
@@ -374,6 +390,18 @@ public enum PlainTextExtractor {
         private var rubyBase: Range<Int>?
         /// <rt> の中なら、そこまでに読み取ったルビ。
         private var rubyText: String?
+        /// いまの <ruby> の親文字をルビの区切りごとに分けたもの。<rtc> の対応付けに使う。
+        private var rubyChunks: [Range<Int>] = []
+        /// いまの <ruby> の親文字全体。
+        private var rubyWhole: Range<Int>?
+        /// <rtc> の中にいるか。
+        private var isInRubyContainer = false
+        /// いまの <rtc> で読み取ったルビ。閉じるときにまとめて親文字と対応付ける。
+        private var rubyContainerTexts: [String] = []
+        /// いまの <ruby> で見た <rtc> の数。2 つ目から先は置き場所が無いので捨てる。
+        private var rubyContainerCount = 0
+        /// 1 段目のルビを、親文字のどのまとまりまで対応付けたか。
+        private var rubyReadingIndex = 0
         private var ruby: [RubyAnnotation] = []
 
         var isDropping: Bool { droppingTag != nil }
@@ -400,7 +428,13 @@ public enum PlainTextExtractor {
 
         mutating func beginRuby() {
             rubyDepth += 1
-            rubyBase = nil
+            if rubyDepth == 1 {
+                rubyBase = nil
+                rubyChunks = []
+                rubyWhole = nil
+                rubyContainerCount = 0
+                rubyReadingIndex = 0
+            }
         }
 
         mutating func endRuby() {
@@ -409,11 +443,15 @@ public enum PlainTextExtractor {
             if rubyDepth == 0 {
                 rubyBase = nil
                 rubyText = nil
+                isInRubyContainer = false
+                rubyContainerTexts = []
             }
         }
 
-        /// 次の親文字から新しいまとまりを始める。
-        mutating func beginRubyBase() {
+        /// ここまでの親文字をひとまとまりとして区切る。
+        mutating func closeRubyBaseChunk() {
+            guard rubyDepth > 0 else { return }
+            if let base = rubyBase, !base.isEmpty { rubyChunks.append(base) }
             rubyBase = nil
         }
 
@@ -423,12 +461,55 @@ public enum PlainTextExtractor {
         }
 
         mutating func endRubyText() {
-            defer { rubyText = nil }
+            // <rtc> の中では、<rt> の外の文字も本文ではなく注記として扱う
+            defer { rubyText = isInRubyContainer ? "" : nil }
             guard let reading = rubyText?.trimmingCharacters(in: Self.trimmed), !reading.isEmpty else { return }
-            guard let base = rubyBase, !base.isEmpty else { return }
-            ruby.append(RubyAnnotation(range: base, text: reading))
-            // 次の <rt> は、ここから後ろの親文字に付く
-            rubyBase = nil
+            // <rtc> の中のルビは、閉じるときにまとめて親文字と対応付ける
+            if isInRubyContainer {
+                rubyContainerTexts.append(reading)
+                return
+            }
+            // 区切られていない親文字があれば、ここまでをひとまとまりにする
+            closeRubyBaseChunk()
+            // ルビは前から順に親文字のまとまりへ対応付ける
+            guard rubyReadingIndex < rubyChunks.count else { return }
+            ruby.append(RubyAnnotation(range: rubyChunks[rubyReadingIndex], text: reading))
+            rubyReadingIndex += 1
+        }
+
+        mutating func beginRubyContainer() {
+            guard rubyDepth > 0 else { return }
+            isInRubyContainer = true
+            rubyContainerTexts = []
+            // <rt> を使わず <rtc> に直接書く形 (<rtc>kanji</rtc>) も拾う
+            rubyText = ""
+        }
+
+        mutating func endRubyContainer() {
+            guard isInRubyContainer else { return }
+            // <rtc> に直接書かれた文字を拾う
+            if let loose = rubyText?.trimmingCharacters(in: Self.trimmed), !loose.isEmpty {
+                rubyContainerTexts.append(loose)
+            }
+            let texts = rubyContainerTexts
+            isInRubyContainer = false
+            rubyText = nil
+            rubyContainerTexts = []
+            rubyContainerCount += 1
+            // 置けるのは親文字の反対側の 1 段だけなので、2 つ目から先の <rtc> は捨てる
+            guard rubyContainerCount == 1, !texts.isEmpty else { return }
+
+            if texts.count == 1 {
+                // ひとまとまりの注記は親文字全体に付ける
+                if let whole = rubyWhole, !whole.isEmpty {
+                    ruby.append(RubyAnnotation(range: whole, text: texts[0], position: .under))
+                }
+            } else {
+                // 複数あるときは 1 段目と同じ区切りに順に対応付ける
+                for (index, text) in texts.enumerated() where index < rubyChunks.count {
+                    ruby.append(RubyAnnotation(range: rubyChunks[index], text: text, position: .under))
+                }
+            }
         }
 
         mutating func addAnchor(_ id: String) {
@@ -498,11 +579,8 @@ public enum PlainTextExtractor {
         private mutating func emit(_ c: Character) {
             // <ruby> の中なら、この文字を親文字の範囲に加える
             if rubyDepth > 0, !c.isNewline {
-                if let base = rubyBase {
-                    rubyBase = base.lowerBound..<(count + 1)
-                } else {
-                    rubyBase = count..<(count + 1)
-                }
+                rubyBase = (rubyBase?.lowerBound ?? count)..<(count + 1)
+                rubyWhole = (rubyWhole?.lowerBound ?? count)..<(count + 1)
             }
             out.append(c)
             count += 1
@@ -561,7 +639,7 @@ public enum PlainTextExtractor {
                 let lower = min(max(0, annotation.range.lowerBound - leading), length)
                 let upper = min(max(0, annotation.range.upperBound - leading), length)
                 guard lower < upper else { return nil }
-                return RubyAnnotation(range: lower..<upper, text: annotation.text)
+                return RubyAnnotation(range: lower..<upper, text: annotation.text, position: annotation.position)
             }
             return ExtractedText(text: text, anchors: adjusted, ruby: shifted)
         }

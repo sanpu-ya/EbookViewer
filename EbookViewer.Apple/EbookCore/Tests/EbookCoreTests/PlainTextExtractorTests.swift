@@ -60,14 +60,59 @@ struct PlainTextExtractorTests {
         #expect(String(base[6..<7]) == "私")
     }
 
-    @Test func dropsSecondLevelRubyAndEmptyReadings() {
-        // <rtc> (ローマ字などの二段目) は親文字に重なるので落とす
-        let r = extract("<ruby>漢<rt>かん</rt><rtc>kan</rtc></ruby>")
-        #expect(r.text == "漢")
-        #expect(r.ruby == [RubyAnnotation(range: 0..<1, text: "かん")])
-        // 空のルビ、親文字の無いルビは捨てる
+    @Test func dropsEmptyReadings() {
         #expect(extract("<ruby>字<rt> </rt></ruby>").ruby.isEmpty)
         #expect(extract("<ruby><rt>よみ</rt></ruby>").ruby.isEmpty)
+    }
+
+    @Test func takesSecondLevelRubyFromRtc() {
+        // <rtc> の注記は親文字の反対側に置く
+        let r = extract("<ruby>漢字<rt>かんじ</rt><rtc>kanji</rtc></ruby>")
+        #expect(r.text == "漢字")
+        #expect(r.ruby == [
+            RubyAnnotation(range: 0..<2, text: "かんじ"),
+            RubyAnnotation(range: 0..<2, text: "kanji", position: .under),
+        ])
+    }
+
+    @Test func secondLevelWithOneReadingSpansTheWholeBase() {
+        // 1 段目は 1 文字ずつ、2 段目はまとめて 1 つ
+        let r = extract("""
+        <ruby><rb>旧</rb><rb>金</rb><rb>山</rb>\
+        <rt>jiù</rt><rt>jīn</rt><rt>shān</rt>\
+        <rtc><rt>San Francisco</rt></rtc></ruby>
+        """)
+        #expect(r.text == "旧金山")
+        #expect(r.ruby == [
+            RubyAnnotation(range: 0..<1, text: "jiù"),
+            RubyAnnotation(range: 1..<2, text: "jīn"),
+            RubyAnnotation(range: 2..<3, text: "shān"),
+            RubyAnnotation(range: 0..<3, text: "San Francisco", position: .under),
+        ])
+    }
+
+    @Test func secondLevelWithSeveralReadingsFollowsTheFirstLevelSplit() {
+        let r = extract("""
+        <ruby>東<rt>とう</rt>京<rt>きょう</rt>\
+        <rtc><rt>tō</rt><rt>kyō</rt></rtc></ruby>
+        """)
+        #expect(r.text == "東京")
+        #expect(r.ruby == [
+            RubyAnnotation(range: 0..<1, text: "とう"),
+            RubyAnnotation(range: 1..<2, text: "きょう"),
+            RubyAnnotation(range: 0..<1, text: "tō", position: .under),
+            RubyAnnotation(range: 1..<2, text: "kyō", position: .under),
+        ])
+    }
+
+    @Test func dropsThirdLevelRubyAndKeepsRtcTextOutOfTheBody() {
+        // 置き場所が無い 3 段目は捨てる。<rtc> の中身が本文に混ざらないことも確かめる
+        let r = extract("<p><ruby>漢<rt>かん</rt><rtc>kan</rtc><rtc>KAN</rtc></ruby>字</p>")
+        #expect(r.text == "漢字")
+        #expect(r.ruby == [
+            RubyAnnotation(range: 0..<1, text: "かん"),
+            RubyAnnotation(range: 0..<1, text: "kan", position: .under),
+        ])
     }
 
     @Test func decodesEntitiesInsideRubyReading() {

@@ -15,16 +15,27 @@ import UIKit
 import AppKit
 #endif
 
+/// ルビを親文字のどちら側に置くか。
+public enum STRubyPosition: Sendable, Equatable, CaseIterable {
+    /// 親文字の上 — 縦書きでは右。ふつうのルビ。
+    case over
+    /// 親文字の下 — 縦書きでは左。二段ルビの 2 段目 (読み以外の注記など)。
+    case under
+}
+
 /// 親文字の範囲とそれに振るルビ。
 public struct STRubyAnnotation: Equatable, Sendable {
     /// 親文字の範囲 (STLabel.text の Character 単位、0 始まり)。
     public var range: Range<Int>
     /// ルビ (振り仮名)。
     public var text: String
+    /// 親文字のどちら側に置くか。
+    public var position: STRubyPosition
 
-    public init(range: Range<Int>, text: String) {
+    public init(range: Range<Int>, text: String, position: STRubyPosition = .over) {
         self.range = range
         self.text = text
+        self.position = position
     }
 }
 
@@ -129,7 +140,8 @@ struct STRubyLayout {
 
             let half = extra / CGFloat(range.count * 2)
             for i in range {
-                spacings[i] = STSpacing(before: half, after: half)
+                // 二段ルビでは同じ親文字に 2 つのルビが付く。長いほうに合わせる
+                spacings[i] = STSpacing(before: max(spacings[i].before, half), after: max(spacings[i].after, half))
             }
             needsToWiden = true
         }
@@ -187,14 +199,20 @@ struct STRubyLayout {
             inlineStart = 0
         }
 
-        // 縦書きは親文字の右、横書きは親文字の上に置く
+        // over は親文字の上 (縦書きでは右)、under は下 (縦書きでは左) に置く
+        let blockStart: CGFloat
+        switch (direction, ruby.annotation.position) {
+        case (.tbRl, .over): blockStart = base.blockMax
+        case (.tbRl, .under): blockStart = base.blockMin - rubyBounds.blockLength
+        case (.lrTb, .over): blockStart = base.blockMin - rubyBounds.blockLength
+        case (.lrTb, .under): blockStart = base.blockMax
+        }
         let translation: CGPoint
         switch direction {
         case .tbRl:
-            translation = CGPoint(x: base.blockMax - rubyBounds.blockMin, y: inlineStart - rubyBounds.inlineMin)
+            translation = CGPoint(x: blockStart - rubyBounds.blockMin, y: inlineStart - rubyBounds.inlineMin)
         case .lrTb:
-            translation = CGPoint(x: inlineStart - rubyBounds.inlineMin,
-                                  y: base.blockMin - rubyBounds.blockLength - rubyBounds.blockMin)
+            translation = CGPoint(x: inlineStart - rubyBounds.inlineMin, y: blockStart - rubyBounds.blockMin)
         }
 
         for (offset, run) in pieceRuns.enumerated() {

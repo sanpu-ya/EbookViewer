@@ -161,6 +161,96 @@ struct RubyTests {
         #expect(rubyInk > plainInk)
     }
 
+    // MARK: - 二段ルビ
+
+    @Test func secondLevelRubySitsOnTheOppositeSideInVerticalWriting() {
+        let label = makeLabel("漢字です", ruby: [
+            STRubyAnnotation(range: 0..<2, text: "かんじ"),
+            STRubyAnnotation(range: 0..<2, text: "kanji", position: .under),
+        ])
+        let base = label.context.runs[0..<2]
+        let baseLeft = base.map(\.frame.minX).min()!
+        let baseRight = base.map(\.frame.maxX).max()!
+        let over = label.rubyRuns.filter { $0.frame.minX >= baseRight - 0.5 }
+        let under = label.rubyRuns.filter { $0.frame.maxX <= baseLeft + 0.5 }
+        // 縦書きでは 1 段目が右、2 段目が左
+        #expect(over.count == 3)
+        #expect(under.count == 5)
+        #expect(over.count + under.count == label.rubyRuns.count)
+        #expect(abs(under.map(\.frame.maxX).max()! - baseLeft) < 0.5)
+    }
+
+    @Test func secondLevelRubySitsBelowInHorizontalWriting() {
+        let label = makeLabel(
+            "漢字です",
+            ruby: [
+                STRubyAnnotation(range: 0..<2, text: "かんじ"),
+                STRubyAnnotation(range: 0..<2, text: "kanji", position: .under),
+            ],
+            size: CGSize(width: 600, height: 400), direction: .lrTb)
+        let base = label.context.runs[0..<2]
+        let baseTop = base.map(\.frame.minY).min()!
+        let baseBottom = base.map(\.frame.maxY).max()!
+        let over = label.rubyRuns.filter { $0.frame.maxY <= baseTop + 0.5 }
+        let under = label.rubyRuns.filter { $0.frame.minY >= baseBottom - 0.5 }
+        #expect(over.count == 3)
+        #expect(under.count == 5)
+        #expect(over.count + under.count == label.rubyRuns.count)
+    }
+
+    @Test func reservesSpaceOnBothSidesForSecondLevelRuby() {
+        let oneSided = makeLabel("漢字", ruby: [STRubyAnnotation(range: 0..<2, text: "かんじ")])
+        let twoSided = makeLabel("漢字", ruby: [
+            STRubyAnnotation(range: 0..<2, text: "かんじ"),
+            STRubyAnnotation(range: 0..<2, text: "kanji", position: .under),
+        ])
+        #expect(abs(oneSided.rubyExtent - 10) < 0.01)
+        #expect(abs(twoSided.rubyExtent - 20) < 0.01)
+        // 両側に空きが要るぶん、1 ページに入る行数は増えない
+        #expect(twoSided.linesPerPage <= oneSided.linesPerPage)
+        // どちらのルビも表示領域に収まる
+        let drawn = twoSided.drawnRubyFrames
+        #expect(drawn.count == 8)
+        #expect(drawn.allSatisfy { $0.minX >= -0.5 && $0.maxX <= twoSided.bounds.maxX + 0.5 })
+    }
+
+    @Test func secondLevelRubyOnTheLastLineOfAPageIsNotClipped() {
+        // 1 行 5 文字で何行も続く本文。ページの最後の行 (縦書きでは左端) に二段ルビを振る
+        let text = String(repeating: "あいうえお\n", count: 12)
+        // 1 ページの行数は二段ルビのぶんの空きで決まるので、同じ条件の label から求める
+        let probe = makeLabel(text, ruby: [
+            STRubyAnnotation(range: 0..<2, text: "うえ"),
+            STRubyAnnotation(range: 0..<2, text: "した", position: .under),
+        ])
+        let offset = (probe.linesPerPage - 1) * 6
+        let withRuby = makeLabel(text, ruby: [
+            STRubyAnnotation(range: offset..<(offset + 2), text: "うえ"),
+            STRubyAnnotation(range: offset..<(offset + 2), text: "した", position: .under),
+        ])
+        // 行数が変わっていないこと (このページの最後の行にルビが載っている) を確かめてから見る
+        #expect(withRuby.context.runs[offset].line == withRuby.linesPerPage - 1)
+        let drawn = withRuby.drawnRubyFrames
+        #expect(drawn.count == 4)
+        #expect(drawn.allSatisfy { $0.minX >= -0.5 && $0.maxX <= withRuby.bounds.maxX + 0.5 })
+    }
+
+    @Test func widensTheBaseToFitTheLongerOfTheTwoLevels() {
+        // 親文字 2 文字 (40pt) に、1 段目 3 文字 (30pt) と 2 段目 7 文字 (70pt)
+        let label = makeLabel("漢字", ruby: [
+            STRubyAnnotation(range: 0..<2, text: "かんじ"),
+            STRubyAnnotation(range: 0..<2, text: "にだんめのるび", position: .under),
+        ])
+        let base = label.context.runs[0..<2]
+        let baseLength = base.map(\.frame.maxY).max()! - base.map(\.frame.minY).min()!
+        // 長いほうの 2 段目に合わせて広がる
+        #expect(abs(baseLength - 70) < 2)
+        // 短いほうの 1 段目は広がった親文字の中央にそろう
+        let over = label.rubyRuns.filter { $0.frame.minX >= base.map(\.frame.maxX).max()! - 0.5 }
+        let overMid = (over.map(\.frame.minY).min()! + over.map(\.frame.maxY).max()!) * 0.5
+        let baseMid = (base.map(\.frame.minY).min()! + base.map(\.frame.maxY).max()!) * 0.5
+        #expect(abs(overMid - baseMid) < 0.5)
+    }
+
     @Test func rubyFollowsTheCurrentPage() {
         // 2 ページ目の親文字に付けたルビは 1 ページ目には出ない
         let text = String(repeating: "あいうえおかきくけこ\n", count: 30)
