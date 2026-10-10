@@ -93,6 +93,9 @@ final class TextViewCoordinator: TextBridge {
         label.sizeAnnotations = content.sizes.map {
             STSizeAnnotation(range: $0.range, scale: $0.scale)
         }
+        label.indentAnnotations = content.indents.map {
+            STIndentAnnotation(range: $0.range, head: $0.head, tail: $0.tail.map { CGFloat($0) })
+        }
         label.lineAnnotations = content.lines.map {
             STLineAnnotation(range: $0.range, style: Self.lineStyle($0.style), position: Self.linePosition($0.position))
         }
@@ -113,6 +116,7 @@ final class TextViewCoordinator: TextBridge {
         label.lineAnnotations = []
         label.tateChuYokoRanges = []
         label.sizeAnnotations = []
+        label.indentAnnotations = []
         label.pageIndex = 0
     }
 

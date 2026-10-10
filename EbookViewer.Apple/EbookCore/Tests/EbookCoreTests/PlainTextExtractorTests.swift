@@ -309,6 +309,35 @@ struct PlainTextExtractorTests {
         #expect(r.sizes == [SizeAnnotation(range: 0..<3, scale: 2.0)])
     }
 
+    @Test func takesIndentFromAozoraClasses() {
+        #expect(extract("<div class=\"jisage_3\">字下げ</div>").indents
+            == [IndentAnnotation(range: 0..<3, head: 3)])
+        #expect(extract("<div class=\"jisage\">字下げ</div>").indents
+            == [IndentAnnotation(range: 0..<3, head: 1)])
+        #expect(extract("<div class=\"chitsuki_0\">地付き</div>").indents
+            == [IndentAnnotation(range: 0..<3, head: 0, tail: 0)])
+        #expect(extract("<div class=\"chitsuki_2\">地寄せ</div>").indents
+            == [IndentAnnotation(range: 0..<3, head: 0, tail: 2)])
+    }
+
+    @Test func takesIndentFromMarginStyle() {
+        // 青空文庫の HTML は class と style の両方を持つことが多い
+        #expect(extract("<div class=\"jisage_3\" style=\"margin-left: 3em\">字下げ</div>").indents
+            == [IndentAnnotation(range: 0..<3, head: 3)])
+        // 縦書きは margin-right
+        #expect(extract("<div style=\"margin-right: 2em\">字下げ</div>").indents
+            == [IndentAnnotation(range: 0..<3, head: 2)])
+    }
+
+    @Test func indentCoversTheWholeBlock() {
+        let r = extract("<p>本文</p><div class=\"jisage_2\">引用の一行目\n引用の二行目</div><p>本文</p>")
+        #expect(r.indents.count == 1)
+        let indent = r.indents[0]
+        let chars = Array(r.text)
+        #expect(String(chars[indent.range]).hasPrefix("引用"))
+        #expect(indent.head == 2)
+    }
+
     @Test func takesTateChuYokoFromClass() {
         let r = extract("<p>昭和<span class=\"tcy\">30</span>年</p>")
         #expect(r.text == "昭和30年")

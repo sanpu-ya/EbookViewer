@@ -17,6 +17,7 @@ struct StyleTests {
         lines: [STLineAnnotation] = [],
         tateChuYoko: [Range<Int>] = [],
         sizes: [STSizeAnnotation] = [],
+        indents: [STIndentAnnotation] = [],
         emphasis: [STEmphasisAnnotation] = [],
         ruby: [STRubyAnnotation] = [],
         size: CGSize = CGSize(width: 400, height: 600),
@@ -35,6 +36,7 @@ struct StyleTests {
         label.lineAnnotations = lines
         label.tateChuYokoRanges = tateChuYoko
         label.sizeAnnotations = sizes
+        label.indentAnnotations = indents
         label.emphasisAnnotations = emphasis
         label.rubyAnnotations = ruby
         label.layoutSubviews()
@@ -228,6 +230,59 @@ struct StyleTests {
         let label = makeLabel("大事", emphasis: [STEmphasisAnnotation(range: 0..<2, position: .under)])
         let base = label.context.runs[0..<2]
         #expect(label.rubyRuns.allSatisfy { $0.frame.maxX <= base.map(\.frame.minX).min()! + 0.5 })
+    }
+
+    // MARK: - 字下げ・地付き
+
+    @Test func indentMovesTheStartOfTheLine() {
+        let plain = makeLabel("あいうえお")
+        let indented = makeLabel("あいうえお", indents: [STIndentAnnotation(range: 0..<5, head: 3)])
+        // 縦書きなので行の始まり (上) に 3 文字ぶん空く
+        #expect(abs(plain.context.runs[0].frame.minY - 0) < 0.5)
+        #expect(abs(indented.context.runs[0].frame.minY - 60) < 0.5)
+    }
+
+    @Test func indentAppliesToEveryLineOfTheBlock() {
+        // 1 行 5 文字ぶんの高さ。3 字下げすると 1 行 2 文字になり、どの行も同じ位置から始まる
+        let size = CGSize(width: 400, height: 100)
+        let label = makeLabel(
+            "あいうえおかきく", indents: [STIndentAnnotation(range: 0..<8, head: 3)], size: size)
+        #expect(label.layoutedLineCount > 1)
+        for line in 0..<label.layoutedLineCount {
+            let first = label.context.runs.first { $0.line == line }!
+            #expect(abs(first.frame.minY - 60) < 0.5)
+        }
+    }
+
+    @Test func indentOnlyAppliesWhereItIsAsked() {
+        // 2 段落目だけ字下げする
+        let text = "あい\nうえ"
+        let label = makeLabel(text, indents: [STIndentAnnotation(range: 3..<5, head: 2)])
+        #expect(abs(label.context.runs[0].frame.minY - 0) < 0.5)
+        #expect(abs(label.context.runs[3].frame.minY - 40) < 0.5)
+    }
+
+    @Test func trailingAlignmentPushesTheLineToTheEnd() {
+        // 地付き: 行の終わりにそろえる
+        let size = CGSize(width: 400, height: 200)
+        let label = makeLabel("署名", indents: [STIndentAnnotation(range: 0..<2, tail: 0)], size: size)
+        #expect(abs(label.context.runs[1].frame.maxY - 200) < 0.5)
+    }
+
+    @Test func trailingAlignmentCanLeaveAGap() {
+        // 地から 2 字上げ
+        let size = CGSize(width: 400, height: 200)
+        let label = makeLabel("署名", indents: [STIndentAnnotation(range: 0..<2, tail: 2)], size: size)
+        #expect(abs(label.context.runs[1].frame.maxY - 160) < 0.5)
+    }
+
+    @Test func trailingLinesWrapBeforeTheGap() {
+        // 地寄せの行は、空けるぶんだけ早く折り返す
+        let size = CGSize(width: 400, height: 100)
+        let plain = makeLabel("あいうえお", size: size)
+        #expect(plain.layoutedLineCount == 1)
+        let tailed = makeLabel("あいうえお", indents: [STIndentAnnotation(range: 0..<5, tail: 2)], size: size)
+        #expect(tailed.layoutedLineCount == 2)
     }
 
     // MARK: - 文字の大きさ

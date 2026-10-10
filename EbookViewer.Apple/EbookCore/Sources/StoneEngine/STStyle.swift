@@ -52,6 +52,22 @@ public struct STSizeAnnotation: Equatable, Sendable {
     }
 }
 
+/// 字下げ・地付きにする範囲 (青空文庫の「字下げ」「地付き」「地寄せ」)。
+public struct STIndentAnnotation: Equatable, Sendable {
+    /// 範囲 (STLabel.text の Character 単位、0 始まり)。
+    public var range: Range<Int>
+    /// 行の始まりに空ける文字数。
+    public var head: CGFloat
+    /// 行末へ寄せるなら、行の終わりに空ける文字数。寄せないなら nil。
+    public var tail: CGFloat?
+
+    public init(range: Range<Int>, head: CGFloat = 0, tail: CGFloat? = nil) {
+        self.range = range
+        self.head = head
+        self.tail = tail
+    }
+}
+
 /// 圏点 (傍点) を打つ範囲。
 public struct STEmphasisAnnotation: Equatable, Sendable {
     /// 範囲 (STLabel.text の Character 単位、0 始まり)。

@@ -31,6 +31,9 @@ class STLayout {
     private var minY: CGFloat { 0 }
     private var maxX: CGFloat { context.renderSize.width }
     private var maxY: CGFloat { context.renderSize.height }
+    /// 地寄せで行末に空けるぶんを引いた、いまの行の終わり (EbookViewer)。
+    private var lineMaxX: CGFloat { maxX - (context.trailingGap(at: lineStartRunId) ?? 0) }
+    private var lineMaxY: CGFloat { maxY - (context.trailingGap(at: lineStartRunId) ?? 0) }
     private var tmpX: CGFloat?
     
     //--------------------------------------------------------------//
@@ -286,8 +289,8 @@ class STLayout {
         default: break
         }
         
-        // Go next line
-        x = minX
+        // Go next line (EbookViewer: 次の行の字下げぶんだけ空ける)
+        x = minX + context.indent(at: runId + 1)
         y += context.adjustLineHeight
     }
     
@@ -327,9 +330,9 @@ class STLayout {
         default: break
         }
         
-        // Go next line
+        // Go next line (EbookViewer: 次の行の字下げぶんだけ空ける)
         x -= context.adjustLineHeight
-        y = 0
+        y = context.indent(at: runId + 1)
     }
     
     private func goNextLine() {
@@ -364,14 +367,14 @@ class STLayout {
             let tokenId = context.runs[runId].tokenId
             let nextTokenId = context.runs[runId + 1].tokenId
             if tokenId != nextTokenId {
-                if x + context.advance(token: context.tokens[nextTokenId]) > maxX {
+                if x + context.advance(token: context.tokens[nextTokenId]) > lineMaxX {
                     // Go next line
                     goNextLine()
                 }
             }
             // Check with run advance
             else {
-                if x + context.runs[runId + 1].advance.width > maxX {
+                if x + context.runs[runId + 1].advance.width > lineMaxX {
                     // Go next line
                     goNextLine()
                 }
@@ -415,14 +418,14 @@ class STLayout {
             let tokenId = context.runs[runId].tokenId
             let nextTokenId = context.runs[runId + 1].tokenId
             if tokenId != nextTokenId {
-                if y + context.advance(token: context.tokens[nextTokenId]) > maxY {
+                if y + context.advance(token: context.tokens[nextTokenId]) > lineMaxY {
                     // Go next line
                     goNextLine()
                 }
             }
             // Check with font size
             else {
-                if y + context.runs[runId + 1].fontSize > maxY {
+                if y + context.runs[runId + 1].fontSize > lineMaxY {
                     // Go next line
                     goNextLine()
                 }
@@ -544,6 +547,18 @@ class STLayout {
         // Calc gap and diff
         let gap = (context.renderSize.width - total) / CGFloat(tokenCount)
         let diff = context.renderSize.width - total
+        
+        // 地付き・地寄せ (EbookViewer): 行末へ寄せる
+        if let tail = context.trailingGap(at: runIdRange.lowerBound) {
+            let dx = context.renderSize.width - total - tail
+            if dx > 0 {
+                for i in runIdRange {
+                    context.runs[i].position.x += dx
+                    context.runs[i].frame = context.runs[i].frame.shift(dx: dx, dy: 0)
+                }
+            }
+            return
+        }
         
         // Switch by text align
         switch context.textAlign {
@@ -776,6 +791,17 @@ class STLayout {
         let gap = (context.renderSize.height - total) / CGFloat(tokenCount)
         let diff = context.renderSize.height - total
         
+        // 地付き・地寄せ (EbookViewer): 行末へ寄せる
+        if let tail = context.trailingGap(at: runIdRange.lowerBound) {
+            let dy = context.renderSize.height - total - tail
+            if dy > 0 {
+                for i in runIdRange {
+                    context.runs[i].position.y += dy
+                    context.runs[i].frame = context.runs[i].frame.shift(dx: 0, dy: dy)
+                }
+            }
+            return
+        }
         
         // Switch by text align
         switch context.textAlign {
@@ -916,10 +942,14 @@ class STLayout {
         // Notify it
         NotificationCenter.default.post(name: Self.willLayout, object: self)
         
-        // Initialize
+        // Initialize (EbookViewer: 1 行目の字下げ)
         context.lineCount = 0
         x = minX
         y = minY
+        switch context.direction {
+        case .lrTb: x += context.indent(at: 0)
+        case .tbRl: y += context.indent(at: 0)
+        }
         tmpX = nil
         runId = 0
         lineStartRunId = 0

@@ -76,6 +76,22 @@ public struct LineAnnotation: Equatable, Sendable {
     }
 }
 
+/// 字下げ・地付きにする範囲 (青空文庫の「字下げ」「地付き」「地寄せ」)。
+public struct IndentAnnotation: Equatable, Sendable {
+    /// 範囲 (`ExtractedText.text` の Character 単位、0 始まり)。
+    public let range: Range<Int>
+    /// 行の始まりに空ける文字数。
+    public let head: Double
+    /// 行末へ寄せるなら、行の終わりに空ける文字数。寄せないなら nil。
+    public let tail: Double?
+
+    public init(range: Range<Int>, head: Double = 0, tail: Double? = nil) {
+        self.range = range
+        self.head = head
+        self.tail = tail
+    }
+}
+
 /// 文字の大きさを変える範囲。
 public struct SizeAnnotation: Equatable, Sendable {
     /// 範囲 (`ExtractedText.text` の Character 単位、0 始まり)。
@@ -143,6 +159,8 @@ public struct ExtractedText: Sendable {
     public let tateChuYoko: [Range<Int>]
     /// 見出しや文字サイズの注記から取り出した、文字の大きさ。
     public let sizes: [SizeAnnotation]
+    /// 字下げ・地付きの注記から取り出した、行の始まりと終わりの空き。
+    public let indents: [IndentAnnotation]
     /// `<img>` から取り出した画像。本文には置き場所として全角空白が 1 文字入る。
     public let images: [ImageAnnotation]
 
@@ -155,6 +173,7 @@ public struct ExtractedText: Sendable {
         lines: [LineAnnotation] = [],
         tateChuYoko: [Range<Int>] = [],
         sizes: [SizeAnnotation] = [],
+        indents: [IndentAnnotation] = [],
         images: [ImageAnnotation] = []
     ) {
         self.text = text
@@ -165,6 +184,7 @@ public struct ExtractedText: Sendable {
         self.lines = lines
         self.tateChuYoko = tateChuYoko
         self.sizes = sizes
+        self.indents = indents
         self.images = images
     }
 }
@@ -209,6 +229,9 @@ public enum PlainTextExtractor {
     /// 強調を表す要素。
     static let emphasisTags: Set<String> = ["b", "strong", "em", "i", "u", "ins", "s", "strike", "del"]
 
+    /// 字下げ・地付きがかかるブロック要素。
+    static let indentContainerTags: Set<String> = ["div", "p", "blockquote", "li", "dd"]
+
     /// 見出しの大きさ。
     static let headingSizes: [String: Double] = [
         "h1": 1.60, "h2": 1.50, "h3": 1.40, "h4": 1.20, "h5": 1.10, "h6": 1.00,
@@ -225,6 +248,10 @@ public enum PlainTextExtractor {
         case tateChuYoko
         /// 文字の大きさ (ふつうの文字に対する比)。
         case size(Double)
+        /// 字下げ (行の始まりに空ける文字数)。
+        case indent(Double)
+        /// 地付き・地寄せ (行の終わりに空ける文字数)。
+        case trailing(Double)
         /// 太字・斜体。
         case style(TextStyle)
     }
@@ -267,6 +294,7 @@ public enum PlainTextExtractor {
             return line
         }
         if let scale = sizeScale(forClassName: base) { return .size(scale) }
+        if let indent = indentDecoration(forClassName: base) { return indent }
         switch base {
         case "tcy":
             return .tateChuYoko
@@ -339,6 +367,35 @@ public enum PlainTextExtractor {
     private static func step(of name: String, prefix: String) -> Int? {
         guard name.hasPrefix(prefix) else { return nil }
         return Int(name.dropFirst(prefix.count))
+    }
+
+    /// 字下げ・地付きを表す class。`jisage_3` や `chitsuki_2` のように字数が付く。
+    private static func indentDecoration(forClassName name: String) -> Decoration? {
+        if name == "jisage" || name == "indent" { return .indent(1) }
+        if let n = step(of: name, prefix: "jisage_") { return .indent(Double(n)) }
+        if let n = step(of: name, prefix: "jisage") { return .indent(Double(n)) }
+        if name == "chitsuki" || name == "jitsuki" { return .trailing(0) }
+        if let n = step(of: name, prefix: "chitsuki_") { return .trailing(Double(n)) }
+        if let n = step(of: name, prefix: "chitsuki") { return .trailing(Double(n)) }
+        return nil
+    }
+
+    /// `style="margin-left: 3em"` などから字下げを読む (縦書きでは margin-right)。
+    static func indent(forStyle style: String) -> Double? {
+        for property in ["margin-left", "margin-right", "text-indent", "padding-left", "padding-right"] {
+            if let value = emValue(of: property, in: style), value > 0 { return value }
+        }
+        return nil
+    }
+
+    /// `style` から `property` の値を em で読む。
+    private static func emValue(of property: String, in style: String) -> Double? {
+        let lowered = style.lowercased()
+        guard let range = lowered.range(of: property) else { return nil }
+        let value = lowered[range.upperBound...].drop { $0 == ":" || $0 == " " }
+        let number = value.prefix { $0.isNumber || $0 == "." }
+        guard let amount = Double(number) else { return nil }
+        return value.dropFirst(number.count).hasPrefix("em") ? amount : nil
     }
 
     /// `style="font-size: 140%"` や `1.4em` から大きさを読む。
@@ -562,6 +619,17 @@ public enum PlainTextExtractor {
             break
         }
 
+        // 字下げ・地付きはブロックにかかるので、ブロック要素の範囲も覚える。
+        // 入れ子がずれないよう、指定の有無にかかわらず対にして覚えておく
+        if indentContainerTags.contains(tag.name) {
+            if tag.isClose {
+                builder.endEmphasis(tag: tag.name)
+            } else if !tag.isSelfClose {
+                builder.beginEmphasis(tag: tag.name, className: tag.attributes["class"] ?? "",
+                                      style: tag.attributes["style"] ?? "")
+            }
+        }
+
         // 見出しは大きさを変えるので範囲を覚える。改行はブロック要素として別に入る
         if headingSizes[tag.name] != nil {
             if tag.isClose {
@@ -754,6 +822,7 @@ public enum PlainTextExtractor {
         private var lines: [LineAnnotation] = []
         private var tateChuYoko: [Range<Int>] = []
         private var sizes: [SizeAnnotation] = []
+        private var indents: [IndentAnnotation] = []
         /// 画像の (置き場所, パス, alt)。置き場所は本文を組み立て終わってから確定する。
         private var images: [(offset: Int, source: String, alt: String)] = []
         private var ruby: [RubyAnnotation] = []
@@ -855,16 +924,23 @@ public enum PlainTextExtractor {
             guard let start = open.start, start < count else { return }
             let range = start..<count
 
-            // style の font-size は class より優先する
+            // style の font-size / margin は class より優先する
             if let scale = PlainTextExtractor.sizeScale(forStyle: open.style) {
                 sizes.append(SizeAnnotation(range: range, scale: scale))
             }
-            // class で指定されていればそれに従う (青空文庫の注記から変換されたもの)
+            let styleIndent = PlainTextExtractor.indent(forStyle: open.style)
+            if let head = styleIndent {
+                indents.append(IndentAnnotation(range: range, head: head))
+            }
+            // class で指定されていればそれに従う (青空文庫の注記から変換されたもの)。
+            // 青空文庫の HTML は class と style の両方を持つので、字下げは style を優先する
             let decorations = PlainTextExtractor.decorations(forClass: open.className)
+                .filter { if case .indent = $0, styleIndent != nil { return false } else { return true } }
             if !decorations.isEmpty {
                 for decoration in decorations { apply(decoration, to: range) }
                 return
             }
+            if styleIndent != nil { return }
             // 見出しは class が無くても大きさを変える
             if let scale = PlainTextExtractor.headingSizes[open.tag] {
                 if PlainTextExtractor.sizeScale(forStyle: open.style) == nil {
@@ -903,6 +979,10 @@ public enum PlainTextExtractor {
                 tateChuYoko.append(range)
             case .size(let scale):
                 sizes.append(SizeAnnotation(range: range, scale: scale))
+            case .indent(let head):
+                indents.append(IndentAnnotation(range: range, head: head))
+            case .trailing(let tail):
+                indents.append(IndentAnnotation(range: range, tail: tail))
             }
         }
 
@@ -1113,10 +1193,14 @@ public enum PlainTextExtractor {
                 guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
                 return SizeAnnotation(range: range, scale: annotation.scale)
             }
+            let shiftedIndents = indents.compactMap { annotation -> IndentAnnotation? in
+                guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
+                return IndentAnnotation(range: range, head: annotation.head, tail: annotation.tail)
+            }
             return ExtractedText(
                 text: text, anchors: adjusted, ruby: shifted, styles: shiftedStyles,
                 emphasis: shiftedEmphasis, lines: shiftedLines, tateChuYoko: shiftedTateChuYoko,
-                sizes: shiftedSizes, images: shiftedImages)
+                sizes: shiftedSizes, indents: shiftedIndents, images: shiftedImages)
         }
     }
 }

@@ -219,6 +219,14 @@ open class STLabel: STPlatformView {
         }
     }
 
+    /// 字下げ・地付きにする範囲。行の始まり (と終わり) に空きを作る。
+    open var indentAnnotations: [STIndentAnnotation] = [] {
+        didSet {
+            guard indentAnnotations != oldValue else { return }
+            setNeedsLayout()
+        }
+    }
+
     /// 文字の大きさを変える範囲。行送りは変わらないので、行送り (lineHeightScale) を
     /// 超える大きさにはならない (隣の行とぶつからないように頭打ちにする)。
     open var sizeAnnotations: [STSizeAnnotation] = [] {
@@ -511,6 +519,8 @@ open class STLabel: STPlatformView {
         context.forcedTateChuYoko = Set(tateChuYokoRanges.flatMap { $0 })
         // 文字ごとの大きさ
         context.sizeScales = makeSizeScales()
+        // 字下げ・地付き
+        applyIndents()
 
         // Refresh font manager
         context.fontManager.refresh()
@@ -556,6 +566,29 @@ open class STLabel: STPlatformView {
             spacings[annotation.offset] = STSpacing(before: 0, after: extent - context.adjustFontSize)
         }
         return spacings
+    }
+
+    /// 範囲ごとの字下げ・地付きを、文字ごとの配列にする。範囲が重なっていたら後の指定が勝つ。
+    private func applyIndents() {
+        guard !indentAnnotations.isEmpty, let text, !text.isEmpty else {
+            context.indents = []
+            context.trailingGaps = []
+            return
+        }
+        var indents = [CGFloat](repeating: 0, count: text.count)
+        var trailings = [CGFloat?](repeating: nil, count: text.count)
+        let em = context.adjustFontSize
+        for annotation in indentAnnotations {
+            let lower = max(0, annotation.range.lowerBound)
+            let upper = min(text.count, annotation.range.upperBound)
+            guard lower < upper else { continue }
+            for i in lower..<upper {
+                if annotation.head != 0 { indents[i] = annotation.head * em }
+                if let tail = annotation.tail { trailings[i] = tail * em }
+            }
+        }
+        context.indents = indents
+        context.trailingGaps = trailings
     }
 
     /// 範囲ごとの指定を、文字ごとの大きさの配列にする。重なっていたら後の指定を掛け合わせる。
@@ -609,6 +642,7 @@ open class STLabel: STPlatformView {
         var styleAnnotations: [STStyleAnnotation]
         var lineAnnotations: [STLineAnnotation]
         var sizeAnnotations: [STSizeAnnotation]
+        var indentAnnotations: [STIndentAnnotation]
         var tateChuYokoRanges: [Range<Int>]
         var allowsRubyOverhang: Bool
         var images: [STImageAnnotation]
@@ -642,6 +676,7 @@ open class STLabel: STPlatformView {
             styleAnnotations: styleAnnotations,
             lineAnnotations: lineAnnotations,
             sizeAnnotations: sizeAnnotations,
+            indentAnnotations: indentAnnotations,
             tateChuYokoRanges: tateChuYokoRanges,
             allowsRubyOverhang: allowsRubyOverhang,
             images: imageAnnotations)
