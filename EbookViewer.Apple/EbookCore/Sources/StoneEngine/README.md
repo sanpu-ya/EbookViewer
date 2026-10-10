@@ -1,0 +1,76 @@
+# StoneEngine (stone_engine の取り込み)
+
+本文の組版に使っている [stone_engine](https://github.com/sanpu-ya/stone_engine) (MIT License,
+Copyright (c) 2024 Nihon Design Center) のうち、`STLabel` の表示に必要な部分だけを取り込んだものです。
+
+- 取り込み元: `https://github.com/sanpu-ya/stone_engine`
+- コミット: `f8b2dc5d64c2022bc730275d287124561b406fef` (2025-04-23)
+- ライセンス: [LICENSE](LICENSE) (MIT)
+
+upstream をそのまま SwiftPM の依存として使えないのは、stone_engine が全ファイルで `import UIKit` して
+いて **iOS 専用**だからです。EbookViewer は macOS 14 以降と iOS 17 以降の 1 ターゲット構成なので、
+AppKit でもビルドできるようにソースを取り込み、最小限の変更を加えています。
+
+## ファイル
+
+| ファイル | 由来 |
+|---|---|
+| `Upstream/STContext.swift` `STObject.swift` `STFontManager.swift` `STTextSubstitutionGlyph.swift` `STLayout.swift` `STParser.swift` | upstream のまま (import 行のみ変更) |
+| `Upstream/STLabel.swift` | upstream に変更あり (下記) |
+| `STPlatform.swift` | EbookViewer で追加 (UIKit / AppKit の差を埋めるシム) |
+
+編集機能のクラス (`STTextView` 一式・`STText`・`STCursorView`・`STKnobView`・`STLensView`・`STTiledLayer`) は
+本文表示に使わないので取り込んでいません。
+
+## upstream からの変更点
+
+### 全ファイル
+
+`import UIKit` を次の形に変えています (`STTextSubstitutionGlyph.swift` は元から両対応)。
+
+```swift
+#if canImport(UIKit)
+import UIKit
+#else
+import AppKit
+#endif
+```
+
+macOS では `STPlatform.swift` が `UIColor` → `NSColor` の typealias、`UIColor.label` などの
+semantic color、`UIGraphicsGetCurrentContext()` を用意するので、これらを使っている箇所は無変更で通ります。
+
+### STLabel.swift
+
+1. **基底クラス** を `UIView` から `STPlatformView` にしました。`STPlatformView` は iOS では `UIView`
+   そのもの、macOS では `NSView` に `isFlipped = true` (stone_engine は y 軸下向きで組版する)、
+   `backgroundColor`、`setNeedsLayout()`、`setNeedsDisplay()`、`layoutSubviews()`、`sizeThatFits(_:)` を
+   足したものです。
+2. **`CATiledLayer` (`STTiledLayer`) を使わない**ようにしました。本文は 1 ページ = 1 画面ぶんしか描かないので
+   タイル分割の利点がなく、`NSView` では背景スレッドからの描画になって扱いが面倒になるためです。
+   `layerClass` の override と `layoutSublayers(of:)` (`#if ALIGN_LAYER` で無効化されていたもの) を外しました。
+3. **編集機能の描画を外しました**。`textInput` プロパティと、選択範囲 (`drawSelectedArea`)・未確定文字列
+   (`drawMarkedArea`)・`uniteRunRects` を削除しています。これらは `STTextView` と組み合わせたときだけ
+   使われるもので、取り込んでいないクラスを参照していました。
+4. **ページ分割を足しました** (`isPaged` / `pageIndex` / `pageCount` / `linesPerPage` /
+   `page(ofCharacterAt:)`)。`isPaged` が false なら upstream と同じ挙動です。詳細は下記。
+5. **同じ条件なら組み直さない**ようにしました。`layoutSubviews()` で組版結果を左右する条件
+   (`LayoutSignature`) を比べ、変わっていなければ `STParser` / `STLayout` を呼び直しません。
+   ページを送るたびに章全体を組み直さないためです。
+
+## ページ分割のしくみ
+
+`STLayout` は `renderSize` の **inline 方向** (縦書きなら高さ) で行を折り返しますが、**block 方向**
+(縦書きなら幅) は打ち切らず、行を右から左へ (横書きなら上から下へ) 積み続けます。`renderSize` に
+収まらない行の run は `visibility = .invisible` (境目は `.ellipsis`) になるだけです。
+
+そこで `isPaged = true` のときは次のようにしています。
+
+- 1 ページの行数 `linesPerPage` = block 方向の長さ ÷ 行送り
+- `pageCount` = `context.lineCount` ÷ `linesPerPage` (切り上げ)
+- 描画時は `visibility` を見ずに、`pageIndex` のページに属する行の run だけを選び、block 方向へ
+  `行送り × linesPerPage × pageIndex` ずらして描く
+
+組版は 1 回だけで、ページ送りは描画位置をずらすだけなので、ページ境界で行が割れたり送るたびに
+組み直しが起きたりすることがありません。`STParser` は 1 文字 = 1 run で解析するので run の添字が
+そのまま文字位置になり、`page(ofCharacterAt:)` で「本文の n 文字目は何ページ目か」が分かります
+(目次のリンク先へのページ送りに使っています)。

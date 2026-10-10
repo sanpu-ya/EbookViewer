@@ -32,6 +32,40 @@ protocol WebBridge: AnyObject {
     func focus()
 }
 
+/// STLabel 側の操作 (BookTextView のコーディネーターが実装する)。
+@MainActor
+protocol TextBridge: AnyObject {
+    /// 本文を差し替え、初期位置のページを表示する。
+    func show(text: String, anchors: [String: Int], initial: InitialPosition)
+    /// 本文を消す (読書位置は通知しない)。
+    func clear()
+    func next()
+    func prev()
+    func goTo(page: Int)
+    /// 章内のアンカー (`#fragment`) の位置へ移動する。
+    func goTo(anchor: String)
+    func focus()
+}
+
+/// 章を開いたときの初期表示位置。
+enum InitialPosition: Equatable {
+    case page(Int)
+    case end
+    case anchor(String)
+    /// 章全体に対する位置 (0...1)。読書位置の復元に使う。
+    case fraction(Double)
+
+    /// viewer.js に渡す JSON。
+    var json: String {
+        switch self {
+        case .page(let p): return "{\"type\":\"page\",\"page\":\(p)}"
+        case .end: return "{\"type\":\"end\"}"
+        case .anchor(let id): return "{\"type\":\"anchor\",\"id\":\(ReaderModel.jsonString(id))}"
+        case .fraction(let v): return "{\"type\":\"fraction\",\"value\":\(v)}"
+        }
+    }
+}
+
 /// 画面の状態と操作 (開いている本、現在の章・ページ、設定の反映、WebView との連携)。
 @MainActor
 @Observable
@@ -69,11 +103,14 @@ final class ReaderModel: BookContentProvider {
     var tocOpen: Bool
 
     @ObservationIgnored weak var web: WebBridge?
-    @ObservationIgnored private var pendingInitial = "{\"type\":\"page\",\"page\":0}"
+    @ObservationIgnored weak var text: TextBridge?
+    @ObservationIgnored private var pendingInitial = InitialPosition.page(0)
     @ObservationIgnored private var pendingOpen: URL?
     @ObservationIgnored var loading = false
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var readyFallbackTask: Task<Void, Never>?
+    /// 本文テキストの取り出し (STLabel 表示) を行っているタスク。
+    @ObservationIgnored var textLoadTask: Task<Void, Never>?
 
     init() {
         let s = ReaderSettings.load()
@@ -102,24 +139,60 @@ final class ReaderModel: BookContentProvider {
         o.paddingPx = settings.paddingPx
         o.background = settings.themeColors.background
         o.foreground = settings.themeColors.foreground
-        o.initialPositionJson = pendingInitial
+        o.initialPositionJson = pendingInitial.json
         return o
+    }
+
+    // MARK: - 表示エンジン
+
+    /// 本文を stone_engine (STLabel) で組むか。false なら WKWebView で HTML を描く。
+    var usesStoneEngine: Bool { settings.textEngine != "web" }
+
+    /// 本文の表示エンジンの選択肢 (値, 表示名)。
+    static var textEngines: [(key: String, label: String)] {
+        [("stone", String(localized: "stone_engine (Japanese typesetting)")), ("web", String(localized: "WebView (HTML)"))]
+    }
+
+    /// 本文を表示するビューが用意できているか。
+    private var isRendererAttached: Bool { usesStoneEngine ? text != nil : web != nil }
+
+    func setTextEngine(_ engine: String) {
+        guard Self.textEngines.contains(where: { $0.key == engine }), engine != settings.textEngine else { return }
+        savePosition()
+        settings.textEngine = engine
+        settings.save()
+        // ビューが入れ替わると attach 時に現在位置が出し直される。
+        // 同じビューが残る場合 (切り替え前後で同じエンジン) に備えて、ここでも出し直しておく
+        if book != nil, isRendererAttached { reloadCurrent() }
+    }
+
+    func toggleTextEngine() {
+        setTextEngine(usesStoneEngine ? "web" : "stone")
     }
 
     // MARK: - ファイルを開く
 
-    /// WebView の準備ができていなければ準備後に開く。
+    /// 本文を表示するビューの準備ができていなければ準備後に開く。
     func requestOpen(_ url: URL) {
-        if web != nil { Task { await openFile(url) } } else { pendingOpen = url }
+        if isRendererAttached { Task { await openFile(url) } } else { pendingOpen = url }
     }
 
     /// WebView が用意できたときに呼ぶ。
     func webDidAttach() {
+        rendererDidAttach()
+    }
+
+    /// STLabel の表示が用意できたときに呼ぶ。
+    func textDidAttach() {
+        rendererDidAttach()
+    }
+
+    private func rendererDidAttach() {
         if let u = pendingOpen {
             pendingOpen = nil
             Task { await openFile(u) }
         } else if book != nil {
-            // レイアウト切替 (iPad の Split View など) で WebView が作り直されたら現在位置を再表示する
+            // レイアウト切替 (iPad の Split View など) やエンジンの切り替えでビューが作り直されたら現在位置を再表示する
             reloadCurrent()
         }
     }
@@ -134,7 +207,7 @@ final class ReaderModel: BookContentProvider {
             await openComic(url)
             return
         }
-        guard web != nil else { pendingOpen = url; return }
+        guard isRendererAttached else { pendingOpen = url; return }
         loading = true
         showLoading(String(localized: "Loading… \(url.lastPathComponent)"))
         // サンドボックス外のファイル (ピッカー・ドロップ・ブックマーク) はスコープ付きアクセスが必要
@@ -156,7 +229,7 @@ final class ReaderModel: BookContentProvider {
 
             let pos = positions.get(url.path)
             let spine = (pos != nil && pos!.spineIndex >= 0 && pos!.spineIndex < loaded.spine.count) ? pos!.spineIndex : Self.firstLinearSpine(loaded)
-            let initial = pos != nil ? "{\"type\":\"fraction\",\"value\":\(pos!.fraction)}" : "{\"type\":\"page\",\"page\":0}"
+            let initial = pos != nil ? InitialPosition.fraction(pos!.fraction) : .page(0)
             loading = false
             goToSpine(spine, initial: initial)
         } catch {
@@ -175,10 +248,12 @@ final class ReaderModel: BookContentProvider {
         book.spine.firstIndex { $0.linear } ?? 0
     }
 
-    /// 本文 (WebView) の表示を閉じる。コミックに切り替えるときに使う。
+    /// 本文の表示を閉じる。コミックに切り替えるときに使う。
     func closeBook() {
         guard book != nil else { return }
         readyFallbackTask?.cancel()
+        textLoadTask?.cancel()
+        text?.clear()
         book = nil
         spineIndex = -1
         page = 0
@@ -202,8 +277,8 @@ final class ReaderModel: BookContentProvider {
 
     // MARK: - ナビゲーション
 
-    private func goToSpine(_ index: Int, initial: String, wrapMessage: String? = nil) {
-        guard let book, let web else { return }
+    private func goToSpine(_ index: Int, initial: InitialPosition, wrapMessage: String? = nil) {
+        guard let book else { return }
         if index < 0 || index >= book.spine.count {
             if let wrapMessage { statusRight = wrapMessage }
             return
@@ -214,8 +289,13 @@ final class ReaderModel: BookContentProvider {
         pages = 1
         showLoading(String(localized: "Rendering…"))
         updateStatus()
+        if usesStoneEngine {
+            showSpineAsText(index, initial: initial)
+            return
+        }
+        guard let web else { return }
         let url = BookScheme.url(forPath: book.spine[index].path)
-        AppDirectories.trace("navigate spine=\(index) url=\(url.absoluteString) initial=\(initial)")
+        AppDirectories.trace("navigate spine=\(index) url=\(url.absoluteString) initial=\(initial.json)")
         // ready が来ないままでも表示中のオーバーレイが残り続けないよう保険をかける
         startReadyFallback(seconds: 10)
         if web.currentURL == url {
@@ -239,15 +319,28 @@ final class ReaderModel: BookContentProvider {
     func reloadCurrent() {
         guard book != nil, spineIndex >= 0 else { return }
         let fraction = pages > 1 ? Double(page) / Double(pages - 1) : 0
-        goToSpine(spineIndex, initial: "{\"type\":\"fraction\",\"value\":\(fraction)}")
+        goToSpine(spineIndex, initial: .fraction(fraction))
     }
 
     func nextPage() {
-        if comic != nil { comicNext() } else { web?.evaluate("window.__ev && window.__ev.next()") }
+        if comic != nil { comicNext() }
+        else if usesStoneEngine { text?.next() }
+        else { web?.evaluate("window.__ev && window.__ev.next()") }
     }
 
     func prevPage() {
-        if comic != nil { comicPrev() } else { web?.evaluate("window.__ev && window.__ev.prev()") }
+        if comic != nil { comicPrev() }
+        else if usesStoneEngine { text?.prev() }
+        else { web?.evaluate("window.__ev && window.__ev.prev()") }
+    }
+
+    /// 章の先頭 / 末尾へ (Home / End)。
+    func firstPageOfChapter() {
+        if usesStoneEngine { text?.goTo(page: 0) } else { web?.evaluate("window.__ev && window.__ev.goto(0)") }
+    }
+
+    func lastPageOfChapter() {
+        if usesStoneEngine { text?.goTo(page: pages - 1) } else { web?.evaluate("window.__ev && window.__ev.gotoEnd()") }
     }
 
     /// 本文中のリンク (ebook:// または外部 URL)。
@@ -263,29 +356,39 @@ final class ReaderModel: BookContentProvider {
     }
 
     func navigate(toPath path: String?, fragment: String?) {
-        guard let book, let web else { return }
+        guard let book else { return }
         let index = path == nil ? spineIndex : book.findSpineIndex(path!)
         if index < 0 {
             // spine に無いドキュメント (脚注ファイルなど) でも本文リソースなら表示する
             guard let path, let res = book.findResource(path), PathUtil.isHtmlMediaType(res.mediaType) else { return }
-            pendingInitial = Self.initialJson(fragment: fragment)
-            web.navigate(to: BookScheme.url(forPath: res.path))
+            pendingInitial = Self.initialPosition(fragment: fragment)
+            if usesStoneEngine {
+                showText(path: res.path, initial: pendingInitial)
+            } else {
+                web?.navigate(to: BookScheme.url(forPath: res.path))
+            }
             return
         }
         if index == spineIndex, let fragment {
-            web.evaluate("window.__ev && window.__ev.gotoAnchor(\(Self.jsonString(fragment)))")
-            web.focus()
+            if usesStoneEngine {
+                text?.goTo(anchor: fragment)
+                text?.focus()
+            } else {
+                web?.evaluate("window.__ev && window.__ev.gotoAnchor(\(Self.jsonString(fragment)))")
+                web?.focus()
+            }
             return
         }
-        goToSpine(index, initial: Self.initialJson(fragment: fragment))
+        goToSpine(index, initial: Self.initialPosition(fragment: fragment))
     }
 
-    private static func initialJson(fragment: String?) -> String {
-        guard let fragment else { return "{\"type\":\"page\",\"page\":0}" }
-        return "{\"type\":\"anchor\",\"id\":\(jsonString(fragment))}"
+    private static func initialPosition(fragment: String?) -> InitialPosition {
+        guard let fragment else { return .page(0) }
+        return .anchor(fragment)
     }
 
-    static func jsonString(_ s: String) -> String {
+    /// JSON の文字列リテラル (前後の `"` を含む)。InitialPosition からも使うので isolation を外している。
+    nonisolated static func jsonString(_ s: String) -> String {
         let d = try? JSONSerialization.data(withJSONObject: [s])
         let arr = d.map { String(decoding: $0, as: UTF8.self) } ?? "[\"\"]"
         return String(arr.dropFirst().dropLast())
@@ -312,22 +415,14 @@ final class ReaderModel: BookContentProvider {
         if type != "page" { AppDirectories.trace("message \(dict)") }
         switch type {
         case "ready":
-            page = dict["page"] as? Int ?? 0
-            pages = max(1, dict["pages"] as? Int ?? 1)
             crashReloads = 0
-            readyFallbackTask?.cancel()
-            hideLoading()
-            updateStatus()
-            scheduleSave()
+            contentReady(page: dict["page"] as? Int ?? 0, pages: dict["pages"] as? Int ?? 1)
         case "page":
-            page = dict["page"] as? Int ?? 0
-            pages = max(1, dict["pages"] as? Int ?? 1)
-            updateStatus()
-            scheduleSave()
+            contentPageChanged(page: dict["page"] as? Int ?? 0, pages: dict["pages"] as? Int ?? 1)
         case "next-chapter":
-            goToSpine(spineIndex + 1, initial: "{\"type\":\"page\",\"page\":0}", wrapMessage: String(localized: "This is the last page"))
+            contentWantsNextChapter()
         case "prev-chapter":
-            goToSpine(spineIndex - 1, initial: "{\"type\":\"end\"}", wrapMessage: String(localized: "This is the first page"))
+            contentWantsPrevChapter()
         case "link":
             if let href = dict["href"] as? String { followLink(href) }
         case "key":
@@ -345,6 +440,36 @@ final class ReaderModel: BookContentProvider {
 
     /// iOS で画面中央をタップしたときにツールバーを出し入れするためのフック。
     @ObservationIgnored var tapCenter: (() -> Void)?
+
+    // MARK: - 本文表示からの通知 (WebView / STLabel 共通)
+
+    /// 章の表示が整ったとき。
+    func contentReady(page: Int, pages: Int) {
+        self.page = page
+        self.pages = max(1, pages)
+        readyFallbackTask?.cancel()
+        hideLoading()
+        updateStatus()
+        scheduleSave()
+    }
+
+    /// 章の中でページが変わったとき (表示領域が変わってページ数が変わったときも)。
+    func contentPageChanged(page: Int, pages: Int) {
+        self.page = page
+        self.pages = max(1, pages)
+        updateStatus()
+        scheduleSave()
+    }
+
+    /// 章の末尾でさらに進もうとしたとき。
+    func contentWantsNextChapter() {
+        goToSpine(spineIndex + 1, initial: .page(0), wrapMessage: String(localized: "This is the last page"))
+    }
+
+    /// 章の先頭でさらに戻ろうとしたとき。
+    func contentWantsPrevChapter() {
+        goToSpine(spineIndex - 1, initial: .end, wrapMessage: String(localized: "This is the first page"))
+    }
 
     private func handleWebKey(_ key: String, ctrl: Bool) {
         if ctrl {
@@ -553,7 +678,8 @@ final class ReaderModel: BookContentProvider {
         case .kf8: format = "KF8"
         case .mobi7: format = "MOBI"
         }
-        statusLeft = "\(bookTitle)\(author)   [\(format)]  \(isVerticalEffective ? String(localized: "Vertical") : String(localized: "Horizontal"))"
+        let engine = usesStoneEngine ? "stone" : "WebView"
+        statusLeft = "\(bookTitle)\(author)   [\(format)]  \(isVerticalEffective ? String(localized: "Vertical") : String(localized: "Horizontal"))  \(engine)"
         let chapter = book.spine.count > 1 ? String(localized: "Chapter \(spineIndex + 1)/\(book.spine.count)") + "   " : ""
         statusRight = chapter + String(localized: "Page \(page + 1)/\(pages)")
     }

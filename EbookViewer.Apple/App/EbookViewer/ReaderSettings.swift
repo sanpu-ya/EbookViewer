@@ -96,6 +96,8 @@ struct RecentFile: Codable, Equatable, Identifiable {
 struct ReaderSettings: Codable {
     /// "auto" / "vertical" / "horizontal"
     var writingMode = "auto"
+    /// 本文の表示エンジン: "stone" (stone_engine の STLabel で組む) / "web" (WKWebView で HTML を描く)
+    var textEngine = "stone"
     var fontSizePx: Double = 20
     /// "mincho" / "gothic"
     var fontKey = "mincho"
@@ -128,6 +130,7 @@ struct ReaderSettings: Codable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         writingMode = try c.decodeIfPresent(String.self, forKey: .writingMode) ?? writingMode
+        textEngine = try c.decodeIfPresent(String.self, forKey: .textEngine) ?? textEngine
         fontSizePx = try c.decodeIfPresent(Double.self, forKey: .fontSizePx) ?? fontSizePx
         fontKey = try c.decodeIfPresent(String.self, forKey: .fontKey) ?? fontKey
         lineHeight = try c.decodeIfPresent(Double.self, forKey: .lineHeight) ?? lineHeight
@@ -150,6 +153,23 @@ struct ReaderSettings: Codable {
             return "\"Hiragino Sans\", \"Hiragino Kaku Gothic ProN\", \"YuGothic\", \"BIZ UDGothic\", \"Noto Sans JP\", sans-serif"
         default:
             return "\"Hiragino Mincho ProN\", \"YuMincho\", \"Hiragino Mincho Pro\", \"BIZ UDMincho\", \"Noto Serif JP\", serif"
+        }
+    }
+
+    /// STLabel (stone_engine) に渡す日本語フォント。CSS のファミリー名ではなく PostScript 名で指定する。
+    /// 先に書いたものから順に、その文字のグリフを持つフォントが使われる。
+    var stoneJapaneseFontNames: [String] {
+        switch fontKey {
+        case "gothic": return ["HiraginoSans-W3", "HiraKakuProN-W3", "YuGothic-Medium"]
+        default: return ["HiraMinProN-W3", "HiraMinPro-W3", "YuMincho-Medium"]
+        }
+    }
+
+    /// STLabel に渡すラテン文字フォント。和欧で書体が揃うよう、日本語フォントと同じ系統にする。
+    var stoneLatinFontNames: [String] {
+        switch fontKey {
+        case "gothic": return ["HiraginoSans-W3", "HelveticaNeue"]
+        default: return ["HiraMinProN-W3", "TimesNewRomanPSMT", "Times-Roman"]
         }
     }
 

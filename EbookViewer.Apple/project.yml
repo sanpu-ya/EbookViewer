@@ -38,6 +38,9 @@ targets:
     dependencies:
       - package: EbookCore
         product: EbookCore
+      # 日本語組版エンジン stone_engine (STLabel) を取り込んだもの
+      - package: EbookCore
+        product: StoneEngine
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sanpu-ya.EbookViewer

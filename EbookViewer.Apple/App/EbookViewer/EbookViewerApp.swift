@@ -75,6 +75,14 @@ struct EbookViewerApp: App {
                     .keyboardShortcut("-", modifiers: .command)
             }
             CommandMenu("Display") {
+                Picker("Text Engine", selection: Binding(get: { model.settings.textEngine }, set: { model.setTextEngine($0) })) {
+                    ForEach(ReaderModel.textEngines, id: \.key) { e in
+                        Text(e.label).tag(e.key)
+                    }
+                }
+                Button("Toggle Text Engine") { model.toggleTextEngine() }
+                    .keyboardShortcut("e", modifiers: [.command, .shift])
+                Divider()
                 Picker("Theme", selection: Binding(get: { model.settings.theme }, set: { model.setTheme($0) })) {
                     Text("Light").tag("light")
                     Text("Sepia").tag("sepia")

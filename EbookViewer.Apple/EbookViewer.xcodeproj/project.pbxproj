@@ -22,6 +22,9 @@
 		8D60B9D725F46E0724A0B31F /* EbookCore in Frameworks */ = {isa = PBXBuildFile; productRef = 32479F38941AE21D530C2399 /* EbookCore */; };
 		DAA3FECF3165C1FC1392ADCA /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15052BD8A4B5D5DCF4B311D9 /* ContentView.swift */; };
 		EB8E637D0269F7FEF91D747F /* ReaderSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78E2B2E5BB3E136C3AA10410 /* ReaderSettings.swift */; };
+		35B0A1000000000000000002 /* BookTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35B0A1000000000000000001 /* BookTextView.swift */; };
+		35B0A1000000000000000004 /* ReaderModel+Text.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35B0A1000000000000000003 /* ReaderModel+Text.swift */; };
+		35B0A1000000000000000011 /* StoneEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 35B0A1000000000000000010 /* StoneEngine */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +44,8 @@
 		DEC6D9CAD3D8FCB1D1EEE04C /* EbookViewer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EbookViewer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EC07D9CFC5C87E25B1482C9D /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		F9C622CEBD75B05B0E69AA96 /* BookWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookWebView.swift; sourceTree = "<group>"; };
+		35B0A1000000000000000001 /* BookTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookTextView.swift; sourceTree = "<group>"; };
+		35B0A1000000000000000003 /* ReaderModel+Text.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderModel+Text.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -49,6 +54,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8D60B9D725F46E0724A0B31F /* EbookCore in Frameworks */,
+				35B0A1000000000000000011 /* StoneEngine in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -105,6 +111,8 @@
 				350678763074E1CE00F666AF /* ComicThumbnailsView.swift */,
 				350678783074E1F300F666AF /* ReaderModel+Comic.swift */,
 				3506787A3074E21C00F666AF /* ComicReaderView.swift */,
+				35B0A1000000000000000001 /* BookTextView.swift */,
+				35B0A1000000000000000003 /* ReaderModel+Text.swift */,
 			);
 			path = EbookViewer;
 			sourceTree = "<group>";
@@ -127,6 +135,7 @@
 			name = EbookViewer;
 			packageProductDependencies = (
 				32479F38941AE21D530C2399 /* EbookCore */,
+				35B0A1000000000000000010 /* StoneEngine */,
 			);
 			productName = EbookViewer;
 			productReference = DEC6D9CAD3D8FCB1D1EEE04C /* EbookViewer.app */;
@@ -198,6 +207,8 @@
 				3506787B3074E21C00F666AF /* ComicReaderView.swift in Sources */,
 				EB8E637D0269F7FEF91D747F /* ReaderSettings.swift in Sources */,
 				48B1785C9A17E8F454503939 /* TocView.swift in Sources */,
+				35B0A1000000000000000002 /* BookTextView.swift in Sources */,
+				35B0A1000000000000000004 /* ReaderModel+Text.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -433,6 +444,10 @@
 		32479F38941AE21D530C2399 /* EbookCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = EbookCore;
+		};
+		35B0A1000000000000000010 /* StoneEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = StoneEngine;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

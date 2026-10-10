@@ -110,10 +110,16 @@ struct ContentView: View {
     private var reader: some View {
         VStack(spacing: 0) {
             ZStack {
-                // WebView は常に置いておく (モデルとの接続を保つため)。コミック表示中はその上に重ねる
-                BookWebView(model: model)
-                    .opacity(model.book == nil ? 0 : 1)
-                    .allowsHitTesting(model.book != nil)
+                // 本文のビューは常に置いておく (モデルとの接続を保つため)。コミック表示中はその上に重ねる
+                Group {
+                    if model.usesStoneEngine {
+                        BookTextView(model: model)
+                    } else {
+                        BookWebView(model: model)
+                    }
+                }
+                .opacity(model.book == nil ? 0 : 1)
+                .allowsHitTesting(model.book != nil)
                 if model.isComic {
                     ComicReaderView(model: model)
                 }
@@ -295,6 +301,12 @@ struct ContentView: View {
 
     private var displayMenu: some View {
         Menu {
+            Picker("Text Engine", selection: Binding(get: { model.settings.textEngine }, set: { model.setTextEngine($0) })) {
+                ForEach(ReaderModel.textEngines, id: \.key) { e in
+                    Text(e.label).tag(e.key)
+                }
+            }
+            Divider()
             Picker("Theme", selection: Binding(get: { model.settings.theme }, set: { model.setTheme($0) })) {
                 Text("Light").tag("light")
                 Text("Sepia").tag("sepia")
@@ -322,7 +334,7 @@ struct ContentView: View {
         } label: {
             Label("Display", systemImage: "gearshape")
         }
-        .help("Theme, Font, Line Spacing")
+        .help("Text Engine, Theme, Font, Line Spacing")
     }
 
     // MARK: - コミックの設定

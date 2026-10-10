@@ -50,14 +50,41 @@ PalmDOC 圧縮・HUFF/CDIC 圧縮の両方を展開できます。DRM 付きの�
 
 ## 縦書き表示のしくみ
 
+本文を組む「本文エンジン」を 2 つ持っていて、「表示」メニューで切り替えられます (⌘⇧E)。
+
+| エンジン | 組版 | 画像・ルビ・強調 | 既定 |
+|---|---|---|---|
+| stone_engine | [stone_engine](https://github.com/sanpu-ya/stone_engine) の `STLabel` (禁則処理・約物半角・縦中横・文字種ごとのフォント) | 表示しない (画像は `［画像］`、ルビは親文字だけ) | ○ |
+| WebView | WKWebView + CSS の多段組み | そのまま表示する | |
+
+組方向は「自動 → 縦書き → 横書き」の順で切り替えられます (どちらのエンジンでも同じ)。「自動」では、書籍側の宣言
+(`page-progression-direction="rtl"`、`primary-writing-mode`、CSS の `writing-mode: vertical-*`、
+KF8 の EXTH 525/527) を優先し、宣言が無ければ日本語の本を縦書きにします。
+
+### stone_engine (既定)
+
+日本語組版エンジン [stone_engine](https://github.com/sanpu-ya/stone_engine) の `STLabel` で本文を描きます。
+`STLabel` は UIKit 専用なので、macOS でも使えるようソースを
+[`EbookCore/Sources/StoneEngine/`](EbookViewer.Apple/EbookCore/Sources/StoneEngine/) に取り込み、AppKit 向けのシムと
+ページ分割を足しています (変更点は [同ディレクトリーの README](EbookViewer.Apple/EbookCore/Sources/StoneEngine/README.md))。
+
+`STLabel` は文字列しか受け取らないので、本文ドキュメントは `PlainTextExtractor` でプレーンテキストに変換します。
+ブロック要素の境目を改行にし (見出し・表・水平線の前後は空行)、`<ruby>` の親文字は残して `<rt>` のふりがなは落とし、
+`<img>` は `［画像］` (alt があればその文字列) に置き換えます。全角文字に挟まれた原文の改行は、CSS の
+segment break transformation rules と同じく空白にせず詰めます。`id` / `name` 属性の位置も覚えておき、
+目次のリンク先 (`#fragment`) から表示ページを求めるのに使います。
+
+ページ分割は、章全体を 1 回だけ組んでから行を block 方向 (縦書きなら右から左) に区切って行います。
+ページを送るときは描画位置をずらすだけなので、組み直しは起きません。
+
+画像・ルビ・強調をそのまま見たいときは「表示」メニューで WebView に切り替えてください。
+
+### WebView
+
 本文は WKWebView で描画します。本文ドキュメントに `viewer.css` / `viewer.js` を注入し、
 `body` を `writing-mode: vertical-rl` の多段組みコンテナ (`column-width` = 表示領域の高さ) にすることで、
 1 段 = 1 ページとして行が途中で切れないページ分割を行っています。縦書きではページが縦方向に積まれるため
 縦スクロール、横書きでは横スクロールでページを送ります。
-
-組方向は「自動 → 縦書き → 横書き」の順で切り替えられます。「自動」では、書籍側の宣言
-(`page-progression-direction="rtl"`、`primary-writing-mode`、CSS の `writing-mode: vertical-*`、
-KF8 の EXTH 525/527) を優先し、宣言が無ければ日本語の本を縦書きにします。
 
 本文・画像・CSS は独自スキーム `ebook://book/` (`WKURLSchemeHandler`) で WKWebView に配信します。
 本文の展開と CSS/JS 注入はバックグラウンドキューで行い、応答はメインスレッドで返します。
@@ -75,6 +102,7 @@ iOS では WKWebView のネイティブスクロールを止め、`viewer.js` �
 | 章の先頭／末尾 | Home / End | — |
 | 文字サイズ | ⌘+ / ⌘- | 「表示」メニュー |
 | 組方向 | ツールバー / ⌘⇧W (自動 → 縦書き → 横書き) | ツールバー |
+| 本文エンジン | 「表示」メニュー / ⌘⇧E (stone_engine ⇄ WebView) | ツールバー「表示」 |
 | テーマ・フォント・行間・余白 | ツールバー「表示」または「表示」メニュー | ツールバー「表示」 |
 | ツールバーを隠す | — | 画面中央をタップ |
 
@@ -133,6 +161,8 @@ EbookViewer.Apple/
     EbookViewerApp.swift     App、メニューコマンド、Finder からのオープン
     ContentView.swift        画面全体 (Mac/iPad: サイドバー + 本文、iPhone: 本文 + 目次シート)
     ReaderModel.swift        画面状態と操作 (開いている本、章・ページ、設定の反映)
+    ReaderModel+Text.swift   STLabel 表示用に本文をプレーンテキストにして渡す
+    BookTextView.swift       STLabel のラッパー (ページ送り、キー・タップ・スワイプ操作)
     BookWebView.swift        WKWebView のラッパーと JS ブリッジ
     BookSchemeHandler.swift  ebook:// スキームで本文・画像・CSS を配信
     ReaderSettings.swift     設定・読書位置・最近開いたファイルの保存
@@ -149,9 +179,11 @@ EbookViewer.Apple/
       Comic/                 ComicDocument / ComicPage と ComicLoader (CBZ / ZIP / CBR / RAR / フォルダー)
       Epub/                  ZipArchive (自前の ZIP 読み込み) と EpubLoader
       Mobi/                  PalmDB, MOBI ヘッダー/EXTH, INDX, PalmDOC/HUFF-CDIC 展開, KF7/KF8 ビルダー
-      Rendering/             ContentPreparer (CSS/JS 注入) と Resources/viewer.css, viewer.js
+      Rendering/             ContentPreparer (CSS/JS 注入)、PlainTextExtractor (プレーンテキスト化) と Resources/viewer.css, viewer.js
       Support/               XML 簡易 DOM (XMLNode)、zlib、SHA-1、CP1252、HTML 実体、正規表現ヘルパー
-    Tests/EbookCoreTests/    XCTest (サンプル書籍は青空文庫『機械』横光利一、『奇巌城』ルブラン/菊池寛訳 (図版 4 枚))
+    Sources/StoneEngine/     stone_engine (STLabel) の取り込み + AppKit シム + ページ分割
+    Tests/EbookCoreTests/    XCTest / Swift Testing (サンプル書籍は青空文庫『機械』横光利一、『奇巌城』ルブラン/菊池寛訳 (図版 4 枚))
+    Tests/StoneEngineTests/  STLabel のページ分割と描画 (AppKit 移植の確認)
 design/icons/                アプリアイコンの SVG 原稿 (採用: 01_open-book.svg)
 ```
 
@@ -163,6 +195,8 @@ ZIP は自前の `ZipArchive` と zlib で読みます (Linux では zlib を直
 - EPUB (calibre 製横組み / AozoraConv 製縦書き / EPUB3 縦書き・複数ファイル・挿絵入り) のメタデータ、spine、目次、画像参照の解決
 - ハイブリッド MOBI の KF8 部と旧形式 (KF7) 部の両方、および単独 AZW3 の本文再構成、目次ラベル (CNCX)、`kindle:embed` / `recindex` 画像参照、表紙
 - ビューアー資産の注入 (script の除去、文字コード、XHTML 判定)
+- プレーンテキスト化 (ブロック要素の改行、ルビ、画像、文字参照、CRLF、全角文字に挟まれた改行、アンカー位置)
+- STLabel のページ分割 (縦書き / 横書きの 1 ページの行数、総ページ数、文字位置からのページ算出) と、実際にグリフが描かれること
 - CBZ / フォルダーの画像列挙と自然順ソート、ComicInfo.xml の解釈
 - ローカライズ文字列 (英語 / 日本語) の対応
 
@@ -173,3 +207,13 @@ ZIP は自前の `ZipArchive` と zlib で読みます (Linux では zlib を直
 
 本文を表示する WebKit のプロセスが繰り返し終了する場合は、macOS 版の App Sandbox に
 `com.apple.security.network.client` の権限があるか Xcode の Signing & Capabilities で確認してください。
+
+本文に画像・ルビ・強調が出ない場合は、本文エンジンが stone_engine になっています。
+「表示」メニュー (⌘⇧E) で WebView に切り替えてください。
+
+## 利用しているソフトウェア
+
+- [stone_engine](https://github.com/sanpu-ya/stone_engine) (MIT License, Copyright (c) 2024 Nihon Design Center) —
+  日本語組版エンジン。`STLabel` の表示に必要な部分を
+  [`EbookCore/Sources/StoneEngine/`](EbookViewer.Apple/EbookCore/Sources/StoneEngine/) に取り込んでいます
+- [Unrar.swift](https://github.com/mtgto/Unrar.swift) — CBR (RAR) の展開。SwiftPM の依存として取得します

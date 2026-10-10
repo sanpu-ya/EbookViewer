@@ -862,6 +862,26 @@
         }
       }
     },
+    "Text Engine": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本文エンジン"
+          }
+        }
+      }
+    },
+    "Text Engine, Theme, Font, Line Spacing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本文エンジン・テーマ・フォント・行間"
+          }
+        }
+      }
+    },
     "The PDF has no pages.": {
       "localizations": {
         "ja": {
@@ -942,16 +962,6 @@
         }
       }
     },
-    "Theme, Font, Line Spacing": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "テーマ・フォント・行間"
-          }
-        }
-      }
-    },
     "This PDF is password protected.": {
       "localizations": {
         "ja": {
@@ -1002,6 +1012,16 @@
         }
       }
     },
+    "Toggle Text Engine": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本文エンジンを切り替え"
+          }
+        }
+      }
+    },
     "Turn pages: tap the left or right edge / swipe": {
       "localizations": {
         "ja": {
@@ -1048,6 +1068,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "縦スクロール (Webtoon)"
+          }
+        }
+      }
+    },
+    "WebView (HTML)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "WebView (HTML)"
           }
         }
       }
@@ -1118,6 +1148,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "縮小"
+          }
+        }
+      }
+    },
+    "stone_engine (Japanese typesetting)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "stone_engine (日本語組版)"
           }
         }
       }
