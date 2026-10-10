@@ -508,6 +508,8 @@ public struct STRun {
     public var fontId: Int
     /// 字面の変化 (太字・斜体)。EbookViewer の追加。
     public var style: STTextStyle = []
+    /// この文字の大きさ。ふつうは context.adjustFontSize と同じ。EbookViewer の追加。
+    public var fontSize: CGFloat = 0
     public var char: Character
     public var punctuation: STPunctuation
     public var glyph: CGGlyph

@@ -90,6 +90,9 @@ final class TextViewCoordinator: TextBridge {
             return STStyleAnnotation(range: $0.range, style: style)
         }
         label.tateChuYokoRanges = content.tateChuYoko
+        label.sizeAnnotations = content.sizes.map {
+            STSizeAnnotation(range: $0.range, scale: $0.scale)
+        }
         label.lineAnnotations = content.lines.map {
             STLineAnnotation(range: $0.range, style: Self.lineStyle($0.style), position: Self.linePosition($0.position))
         }
@@ -109,6 +112,7 @@ final class TextViewCoordinator: TextBridge {
         label.styleAnnotations = []
         label.lineAnnotations = []
         label.tateChuYokoRanges = []
+        label.sizeAnnotations = []
         label.pageIndex = 0
     }
 

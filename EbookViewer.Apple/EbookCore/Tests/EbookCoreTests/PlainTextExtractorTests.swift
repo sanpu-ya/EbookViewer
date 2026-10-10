@@ -278,6 +278,37 @@ struct PlainTextExtractorTests {
         #expect(r.styles == [StyleAnnotation(range: 0..<4, style: .bold)])
     }
 
+    @Test func takesFontSizeFromAozoraClasses() {
+        #expect(extract("<p><span class=\"dai2\">大</span></p>").sizes
+            == [SizeAnnotation(range: 0..<1, scale: 1.4)])
+        #expect(extract("<p><span class=\"sho1\">小</span></p>").sizes
+            == [SizeAnnotation(range: 0..<1, scale: 0.9)])
+        #expect(extract("<p><span class=\"font3\">大</span></p>").sizes
+            == [SizeAnnotation(range: 0..<1, scale: 1.3)])
+        #expect(extract("<p><span class=\"font-4\">小</span></p>").sizes
+            == [SizeAnnotation(range: 0..<1, scale: 0.7)])
+    }
+
+    @Test func takesFontSizeFromInlineStyle() {
+        #expect(extract("<p><span style=\"font-size: 140%\">大</span></p>").sizes
+            == [SizeAnnotation(range: 0..<1, scale: 1.4)])
+        #expect(extract("<p><span style=\"font-size:1.5em\">大</span></p>").sizes
+            == [SizeAnnotation(range: 0..<1, scale: 1.5)])
+        // 単位の無い指定は読まない
+        #expect(extract("<p><span style=\"font-size: 12\">?</span></p>").sizes.isEmpty)
+    }
+
+    @Test func headingsGetABiggerSize() {
+        let r = extract("<h3>大見出し</h3><p>本文</p>")
+        #expect(r.text == "大見出し\n\n本文")
+        #expect(r.sizes == [SizeAnnotation(range: 0..<4, scale: 1.4)])
+    }
+
+    @Test func headingStyleWinsOverTheDefaultSize() {
+        let r = extract("<h3 style=\"font-size: 200%\">見出し</h3>")
+        #expect(r.sizes == [SizeAnnotation(range: 0..<3, scale: 2.0)])
+    }
+
     @Test func takesTateChuYokoFromClass() {
         let r = extract("<p>昭和<span class=\"tcy\">30</span>年</p>")
         #expect(r.text == "昭和30年")

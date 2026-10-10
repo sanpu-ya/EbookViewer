@@ -49,13 +49,16 @@ class STLayout {
         // Set line
         context.runs[runId].line = context.lineCount
         
+        // この文字の大きさ (EbookViewer)
+        let size = context.runs[runId].fontSize
+        
         // For new line
         if context.runs[runId].char.isNewline {
             // Layout run with 0 width
             context.runs[runId].position = .init(x: x, y: y)
             context.runs[runId].frame = .init(
                 x: x, 
-                y: y - context.fontManager.ascent(fontId: context.runs[runId].fontId, size: context.adjustFontSize), 
+                y: y - context.fontManager.ascent(fontId: context.runs[runId].fontId, size: size), 
                 width: 0, 
                 height: context.fontSize)
         }
@@ -120,9 +123,9 @@ class STLayout {
             context.runs[runId].position = .init(x: posX + spacing.before, y: y)
             context.runs[runId].frame = .init(
                 x: x, 
-                y: y - context.fontManager.ascent(fontId: context.runs[runId].fontId, size: context.adjustFontSize), 
+                y: y - context.fontManager.ascent(fontId: context.runs[runId].fontId, size: size), 
                 width: spacing.before + width + spacing.after, 
-                height: context.adjustFontSize * context.fontManager.fontScale(fontId: context.runs[runId].fontId))
+                height: size * context.fontManager.fontScale(fontId: context.runs[runId].fontId))
         }
     }
     
@@ -130,12 +133,16 @@ class STLayout {
         // Set line
         context.runs[runId].line = context.lineCount
         
+        // この文字の大きさと、1 文字ぶんの枠の中で中央にそろえるためのずれ (EbookViewer)
+        let size = context.runs[runId].fontSize
+        let centering = (context.adjustFontSize - size) * 0.5
+        
         // For new line
         if context.runs[runId].char.isNewline {
             // Layout run with 0 height
             context.runs[runId].position = .init(
                 x: x, 
-                y: y + context.adjustFontSize - context.fontManager.descent(fontId: context.runs[runId].fontId, size: context.adjustFontSize))
+                y: y + size - context.fontManager.descent(fontId: context.runs[runId].fontId, size: size))
             context.runs[runId].frame = .init(
                 x: x, 
                 y: y, 
@@ -147,19 +154,19 @@ class STLayout {
             // Layout run in clockwise (EbookViewer: 親文字を広げるぶんの空きを前後に入れる)
             let spacing = context.spacing(at: runId)
             context.runs[runId].position = .init(
-                x: x + context.fontManager.descent(fontId: context.runs[runId].fontId, size: context.adjustFontSize), 
+                x: x + centering + context.fontManager.descent(fontId: context.runs[runId].fontId, size: size), 
                 y: y + spacing.before)
             context.runs[runId].frame = .init(
-                x: x, 
+                x: x + centering, 
                 y: y, 
-                width: context.adjustFontSize, 
+                width: size, 
                 height: spacing.before + context.runs[runId].advance.width + spacing.after)
         }
         // For not clockwise
         else {
             // Decide position y and frame height
-            var posY = y + context.adjustFontSize - context.fontManager.descent(fontId: context.runs[runId].fontId, size: context.adjustFontSize)
-            var height = context.adjustFontSize
+            var posY = y + size - context.fontManager.descent(fontId: context.runs[runId].fontId, size: size)
+            var height = size
             switch context.punctuationMode {
             case .whole:
                 // Do nothing
@@ -170,31 +177,31 @@ class STLayout {
                 case .whole:
                     break
                 case .firstHalf:
-                    height = context.adjustFontSize * 0.5
+                    height = size * 0.5
                 case .secondHalf:
-                    posY -= context.adjustFontSize * 0.5
-                    height = context.adjustFontSize * 0.5
+                    posY -= size * 0.5
+                    height = size * 0.5
                 case .quarter:
-                    posY -= context.adjustFontSize * 0.25
-                    height = context.adjustFontSize * 0.5
+                    posY -= size * 0.25
+                    height = size * 0.5
                 }
             case .stone:
                 // Check with prev run
                 if runId > 0 {
                     // For first half and second half, like '」「'
                     if context.runs[runId - 1].punctuation == .firstHalf && context.runs[runId].punctuation == .secondHalf {
-                        posY -= context.adjustFontSize * 0.5
-                        height = context.adjustFontSize * 0.5
+                        posY -= size * 0.5
+                        height = size * 0.5
                     }
                     // For second half and second half, like '「「'
                     else if context.runs[runId - 1].punctuation == .secondHalf && context.runs[runId].punctuation == .secondHalf {
-                        posY -= context.adjustFontSize * 0.5
-                        height = context.adjustFontSize * 0.5
+                        posY -= size * 0.5
+                        height = size * 0.5
                     }
                     // For quater and second half, like '・「'
                     else if context.runs[runId - 1].punctuation == .quarter && context.runs[runId].punctuation == .secondHalf {
-                        posY -= context.adjustFontSize * 0.5
-                        height = context.adjustFontSize * 0.5
+                        posY -= size * 0.5
+                        height = size * 0.5
                     }
                 }
                 
@@ -202,11 +209,11 @@ class STLayout {
                 if runId + 1 < context.runs.count {
                     // For first half and first half, like '。」'
                     if context.runs[runId].punctuation == .firstHalf && context.runs[runId + 1].punctuation == .firstHalf {
-                        height = context.adjustFontSize * 0.5
+                        height = size * 0.5
                     }
                     // For first half and quarter, like '」・'
                     else if context.runs[runId].punctuation == .firstHalf && context.runs[runId + 1].punctuation == .quarter {
-                        height = context.adjustFontSize * 0.5
+                        height = size * 0.5
                     }
                 }
             }
@@ -215,16 +222,16 @@ class STLayout {
             let spacing = context.spacing(at: runId)
             if context.fontManager.needsToFlip(fontId: context.runs[runId].fontId) {
                 context.runs[runId].position = .init(
-                    x: x, 
-                    y: y + spacing.before + context.adjustFontSize - context.fontManager.descent(fontId: context.runs[runId].fontId, size: context.adjustFontSize) * 0.5)
+                    x: x + centering, 
+                    y: y + spacing.before + size - context.fontManager.descent(fontId: context.runs[runId].fontId, size: size) * 0.5)
             }
             else {
                 context.runs[runId].position = .init(
-                    x: x, 
+                    x: x + centering, 
                     y: posY + spacing.before)
             }
             context.runs[runId].frame = .init(
-                x: x, 
+                x: x + centering, 
                 y: y, 
                 width: context.runs[runId].advance.width, 
                 height: spacing.before + height + spacing.after)
@@ -291,12 +298,12 @@ class STLayout {
             // For second half begin run, like '「'
             if context.runs[lineStartRunId].punctuation == .secondHalf {
                 // Set position and frame
-                let dy = context.adjustFontSize * 0.5
+                let dy = context.runs[lineStartRunId].fontSize * 0.5
                 var position = context.runs[lineStartRunId].position
                 position.y -= dy
                 context.runs[lineStartRunId].position = position
                 var frame = context.runs[lineStartRunId].frame
-                frame.size.height = context.adjustFontSize * 0.5
+                frame.size.height = context.runs[lineStartRunId].fontSize * 0.5
                 context.runs[lineStartRunId].frame = frame
                 
                 // Shift rest runs
@@ -314,7 +321,7 @@ class STLayout {
             if context.runs[runId].punctuation == .firstHalf {
                 // Set frame
                 var frame = context.runs[runId].frame
-                frame.size.height = context.adjustFontSize * 0.5
+                frame.size.height = context.runs[runId].fontSize * 0.5
                 context.runs[runId].frame = frame
             }
         default: break
@@ -415,7 +422,7 @@ class STLayout {
             }
             // Check with font size
             else {
-                if y + context.adjustFontSize > maxY {
+                if y + context.runs[runId + 1].fontSize > maxY {
                     // Go next line
                     goNextLine()
                 }
@@ -696,7 +703,7 @@ class STLayout {
             }
             
             // Shift x
-            let dx = (context.adjustFontSize - total) * 0.5
+            let dx = ((token.runIdRange.first.map { context.runs[$0].fontSize } ?? context.adjustFontSize) - total) * 0.5
             for runId in token.runIdRange {
                 context.runs[runId].position.x += dx
                 context.runs[runId].frame = context.runs[runId].frame.shift(dx: dx, dy: 0)

@@ -74,6 +74,19 @@ open class STContext {
         runId >= 0 && runId < styles.count ? styles[runId] : []
     }
     
+    // Font size (EbookViewer)
+    /// 文字ごとの大きさ (1.0 = fontSize)。添字は run の添字。空なら全部 1.0。
+    public var sizeScales: [CGFloat] = []
+    
+    /// 行送りより大きな文字は隣の行とぶつかるので、これ以上は大きくしない。
+    public var maxSizeScale: CGFloat { max(1, lineHeightScale) }
+    
+    /// runId の run の大きさ (1.0 = fontSize)。
+    public func sizeScale(at runId: Int) -> CGFloat {
+        guard runId >= 0, runId < sizeScales.count else { return 1 }
+        return min(max(0.2, sizeScales[runId]), maxSizeScale)
+    }
+    
     // Tate chu yoko (EbookViewer)
     /// 数字でなくても縦中横にする run の添字 (青空文庫の「縦組み中で横に並んだ文字」)。
     public var forcedTateChuYoko: Set<Int> = []

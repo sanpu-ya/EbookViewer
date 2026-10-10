@@ -219,6 +219,15 @@ open class STLabel: STPlatformView {
         }
     }
 
+    /// 文字の大きさを変える範囲。行送りは変わらないので、行送り (lineHeightScale) を
+    /// 超える大きさにはならない (隣の行とぶつからないように頭打ちにする)。
+    open var sizeAnnotations: [STSizeAnnotation] = [] {
+        didSet {
+            guard sizeAnnotations != oldValue else { return }
+            setNeedsLayout()
+        }
+    }
+
     /// 縦中横にする範囲 (青空文庫の「縦組み中で横に並んだ文字」)。
     /// 横書きでは何も起きない。まとまりが 1 語として切り出されないと横に並ばないので、
     /// 数字や欧文の 2〜3 文字を想定している。
@@ -500,6 +509,8 @@ open class STLabel: STPlatformView {
         context.spacings = makeImageSpacings()
         // 縦中横にする文字
         context.forcedTateChuYoko = Set(tateChuYokoRanges.flatMap { $0 })
+        // 文字ごとの大きさ
+        context.sizeScales = makeSizeScales()
 
         // Refresh font manager
         context.fontManager.refresh()
@@ -547,6 +558,19 @@ open class STLabel: STPlatformView {
         return spacings
     }
 
+    /// 範囲ごとの指定を、文字ごとの大きさの配列にする。重なっていたら後の指定を掛け合わせる。
+    private func makeSizeScales() -> [CGFloat] {
+        guard !sizeAnnotations.isEmpty, let text, !text.isEmpty else { return [] }
+        var scales = [CGFloat](repeating: 1, count: text.count)
+        for annotation in sizeAnnotations {
+            let lower = max(0, annotation.range.lowerBound)
+            let upper = min(scales.count, annotation.range.upperBound)
+            guard lower < upper, annotation.scale > 0 else { continue }
+            for i in lower..<upper { scales[i] *= annotation.scale }
+        }
+        return scales
+    }
+
     /// 範囲ごとの指定を、文字ごとの字面の配列にする。
     private func makeStyles() -> [STTextStyle] {
         guard !styleAnnotations.isEmpty, let text, !text.isEmpty else { return [] }
@@ -584,6 +608,7 @@ open class STLabel: STPlatformView {
         var emphasisAnnotations: [STEmphasisAnnotation]
         var styleAnnotations: [STStyleAnnotation]
         var lineAnnotations: [STLineAnnotation]
+        var sizeAnnotations: [STSizeAnnotation]
         var tateChuYokoRanges: [Range<Int>]
         var allowsRubyOverhang: Bool
         var images: [STImageAnnotation]
@@ -616,6 +641,7 @@ open class STLabel: STPlatformView {
             emphasisAnnotations: emphasisAnnotations,
             styleAnnotations: styleAnnotations,
             lineAnnotations: lineAnnotations,
+            sizeAnnotations: sizeAnnotations,
             tateChuYokoRanges: tateChuYokoRanges,
             allowsRubyOverhang: allowsRubyOverhang,
             images: imageAnnotations)
@@ -698,6 +724,8 @@ open class STLabel: STPlatformView {
         let isRuby: Bool
         /// 字面の変化 (太字・斜体)。フォントが違うので別のまとまりにする。
         let style: STTextStyle
+        /// 文字の大きさ。これも違えば別のまとまりになる。
+        let fontSize: CGFloat
         let ctFont: CTFont
         var glyphs: [CGGlyph]
         var positions: [CGPoint]
@@ -713,19 +741,19 @@ open class STLabel: STPlatformView {
         isClockwise: Bool,
         needsToFlip: Bool,
         isRuby: Bool,
-        style: STTextStyle
+        style: STTextStyle,
+        fontSize: CGFloat
     ) -> Int {
         if let index = drawBuckets.firstIndex(where: {
             $0.fontId == fontId && $0.isClockwise == isClockwise && $0.needsToFlip == needsToFlip
-                && $0.isRuby == isRuby && $0.style == style
+                && $0.isRuby == isRuby && $0.style == style && $0.fontSize == fontSize
         }) {
             return index
         }
-        let size = isRuby ? context.adjustFontSize * rubyFontScale : context.adjustFontSize
-        let ctFont = context.fontManager.ctFont(fontId: fontId, size: size, isClockwise: isClockwise, style: style)
+        let ctFont = context.fontManager.ctFont(fontId: fontId, size: fontSize, isClockwise: isClockwise, style: style)
         drawBuckets.append(DrawBucket(
             fontId: fontId, isClockwise: isClockwise, needsToFlip: needsToFlip, isRuby: isRuby,
-            style: style, ctFont: ctFont, glyphs: [], positions: [], frames: []))
+            style: style, fontSize: fontSize, ctFont: ctFont, glyphs: [], positions: [], frames: []))
         return drawBuckets.count - 1
     }
 
@@ -751,7 +779,7 @@ open class STLabel: STPlatformView {
             // Find bucket
             let bucketIndex = bucketIndex(
                 in: &drawBuckets, fontId: run.fontId, isClockwise: isClockwise, needsToFlip: needsToFlip,
-                isRuby: false, style: run.style)
+                isRuby: false, style: run.style, fontSize: run.fontSize)
 
             // Decide position and frame
             let position = CGPoint(x: run.position.x + translation.x, y: run.position.y + translation.y)
@@ -780,7 +808,7 @@ open class STLabel: STPlatformView {
             }
             let index = bucketIndex(
                 in: &drawBuckets, fontId: run.fontId, isClockwise: run.isClockwise, needsToFlip: run.needsToFlip,
-                isRuby: true, style: [])
+                isRuby: true, style: [], fontSize: context.adjustFontSize * rubyFontScale)
             drawBuckets[index].glyphs.append(run.glyph)
             drawBuckets[index].positions.append(CGPoint(x: run.position.x + translation.x, y: run.position.y + translation.y))
             drawBuckets[index].frames.append(run.frame.offsetBy(dx: translation.x, dy: translation.y))

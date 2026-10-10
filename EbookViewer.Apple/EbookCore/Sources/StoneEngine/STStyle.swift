@@ -39,6 +39,19 @@ public struct STStyleAnnotation: Equatable, Sendable {
     }
 }
 
+/// 文字の大きさを変える範囲。
+public struct STSizeAnnotation: Equatable, Sendable {
+    /// 範囲 (STLabel.text の Character 単位、0 始まり)。
+    public var range: Range<Int>
+    /// ふつうの文字に対する比 (1.4 なら 1.4 倍)。
+    public var scale: CGFloat
+
+    public init(range: Range<Int>, scale: CGFloat) {
+        self.range = range
+        self.scale = scale
+    }
+}
+
 /// 圏点 (傍点) を打つ範囲。
 public struct STEmphasisAnnotation: Equatable, Sendable {
     /// 範囲 (STLabel.text の Character 単位、0 始まり)。

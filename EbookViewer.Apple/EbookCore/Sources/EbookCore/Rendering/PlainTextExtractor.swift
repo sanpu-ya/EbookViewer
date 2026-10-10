@@ -76,6 +76,19 @@ public struct LineAnnotation: Equatable, Sendable {
     }
 }
 
+/// 文字の大きさを変える範囲。
+public struct SizeAnnotation: Equatable, Sendable {
+    /// 範囲 (`ExtractedText.text` の Character 単位、0 始まり)。
+    public let range: Range<Int>
+    /// ふつうの文字に対する比。
+    public let scale: Double
+
+    public init(range: Range<Int>, scale: Double) {
+        self.range = range
+        self.scale = scale
+    }
+}
+
 /// 圏点 (傍点) を打つ範囲。
 public struct EmphasisAnnotation: Equatable, Sendable {
     /// 範囲 (`ExtractedText.text` の Character 単位、0 始まり)。
@@ -128,6 +141,8 @@ public struct ExtractedText: Sendable {
     public let lines: [LineAnnotation]
     /// 縦中横 (`<span class="tcy">`) にする範囲。
     public let tateChuYoko: [Range<Int>]
+    /// 見出しや文字サイズの注記から取り出した、文字の大きさ。
+    public let sizes: [SizeAnnotation]
     /// `<img>` から取り出した画像。本文には置き場所として全角空白が 1 文字入る。
     public let images: [ImageAnnotation]
 
@@ -139,6 +154,7 @@ public struct ExtractedText: Sendable {
         emphasis: [EmphasisAnnotation] = [],
         lines: [LineAnnotation] = [],
         tateChuYoko: [Range<Int>] = [],
+        sizes: [SizeAnnotation] = [],
         images: [ImageAnnotation] = []
     ) {
         self.text = text
@@ -148,6 +164,7 @@ public struct ExtractedText: Sendable {
         self.emphasis = emphasis
         self.lines = lines
         self.tateChuYoko = tateChuYoko
+        self.sizes = sizes
         self.images = images
     }
 }
@@ -192,6 +209,11 @@ public enum PlainTextExtractor {
     /// 強調を表す要素。
     static let emphasisTags: Set<String> = ["b", "strong", "em", "i", "u", "ins", "s", "strike", "del"]
 
+    /// 見出しの大きさ。
+    static let headingSizes: [String: Double] = [
+        "h1": 1.60, "h2": 1.50, "h3": 1.40, "h4": 1.20, "h5": 1.10, "h6": 1.00,
+    ]
+
     /// 文字の修飾を表す class。青空文庫の注記 (https://www.aozora.gr.jp/annotation/) を
     /// HTML にした変換器が出力するものに合わせている。
     enum Decoration: Equatable {
@@ -201,6 +223,8 @@ public enum PlainTextExtractor {
         case line(style: LineStyle, position: LinePosition)
         /// 縦中横。
         case tateChuYoko
+        /// 文字の大きさ (ふつうの文字に対する比)。
+        case size(Double)
         /// 太字・斜体。
         case style(TextStyle)
     }
@@ -242,6 +266,7 @@ public enum PlainTextExtractor {
         if let line = lineDecoration(forClassName: base) {
             return line
         }
+        if let scale = sizeScale(forClassName: base) { return .size(scale) }
         switch base {
         case "tcy":
             return .tateChuYoko
@@ -277,6 +302,56 @@ public enum PlainTextExtractor {
         default:
             return nil
         }
+    }
+
+    /// 文字の大きさを表す class。青空文庫の「文字サイズ」注記を変換したものに合わせている。
+    private static func sizeScale(forClassName name: String) -> Double? {
+        // 大きな文字 / 小さな文字 (n 段階)
+        if let step = step(of: name, prefix: "dai"), step >= 1, step <= 5 { return 1 + 0.2 * Double(step) }
+        if let step = step(of: name, prefix: "sho"), step >= 1, step <= 5 { return 1 - 0.1 * Double(step) }
+        switch name {
+        // 変換器が出す段階つきの大きさ
+        case "font1": return 1.10
+        case "font2": return 1.20
+        case "font3": return 1.30
+        case "font4": return 1.40
+        case "font5": return 1.50
+        case "font6": return 1.60
+        case "font-1": return 0.90
+        case "font-2": return 0.83
+        case "font-3": return 0.77
+        case "font-4", "kogaki": return 0.70
+        case "font-5": return 0.66
+        case "font-6": return 0.62
+        // 見出しの大きさ
+        case "chap1", "o-midashi", "dogyo-o-midashi", "mado-o-midashi": return 1.40
+        case "chap2", "naka-midashi", "dogyo-naka-midashi", "mado-naka-midashi": return 1.20
+        case "chap3", "ko-midashi", "dogyo-ko-midashi", "mado-ko-midashi": return 1.10
+        // font-size: smaller 相当
+        case "notes", "caption", "kaeriten", "okurigana", "superscript", "subscript", "warichu",
+             "sup", "sub", "upr", "swr":
+            return 0.83
+        default: return nil
+        }
+    }
+
+    /// "dai3" のような、接頭辞つきの段階の数。
+    private static func step(of name: String, prefix: String) -> Int? {
+        guard name.hasPrefix(prefix) else { return nil }
+        return Int(name.dropFirst(prefix.count))
+    }
+
+    /// `style="font-size: 140%"` や `1.4em` から大きさを読む。
+    static func sizeScale(forStyle style: String) -> Double? {
+        let lowered = style.lowercased()
+        guard let range = lowered.range(of: "font-size") else { return nil }
+        let value = lowered[range.upperBound...].drop { $0 == ":" || $0 == " " }
+        let number = value.prefix { $0.isNumber || $0 == "." }
+        guard let scale = Double(number), scale > 0 else { return nil }
+        let rest = value.dropFirst(number.count)
+        if rest.hasPrefix("%") { return scale / 100 }
+        if rest.hasPrefix("em") || rest.hasPrefix("rem") { return scale }
+        return nil
     }
 
     private static func lineDecoration(forClassName name: String) -> Decoration? {
@@ -487,22 +562,36 @@ public enum PlainTextExtractor {
             break
         }
 
+        // 見出しは大きさを変えるので範囲を覚える。改行はブロック要素として別に入る
+        if headingSizes[tag.name] != nil {
+            if tag.isClose {
+                builder.endEmphasis(tag: tag.name)
+            } else if !tag.isSelfClose {
+                builder.beginEmphasis(tag: tag.name, className: tag.attributes["class"] ?? "",
+                                      style: tag.attributes["style"] ?? "")
+            }
+        }
+
         // 強調表示
         if emphasisTags.contains(tag.name) {
             if tag.isClose {
                 builder.endEmphasis(tag: tag.name)
             } else if !tag.isSelfClose {
-                builder.beginEmphasis(tag: tag.name, className: tag.attributes["class"] ?? "")
+                builder.beginEmphasis(tag: tag.name, className: tag.attributes["class"] ?? "",
+                                      style: tag.attributes["style"] ?? "")
             }
             return
         }
+        // 見出しの大きさ。
+        // h3 が大見出し、h4 が中見出し、h5 が小見出しという変換が多い。
         // 傍点を class で表している本文 (<span class="sesame">) も拾う。
         // 閉じタグには class が無いので、入れ子がずれないよう span はすべて対にして覚えておく
         if tag.name == "span" {
             if tag.isClose {
                 builder.endEmphasis(tag: tag.name)
             } else if !tag.isSelfClose {
-                builder.beginEmphasis(tag: tag.name, className: tag.attributes["class"] ?? "")
+                builder.beginEmphasis(tag: tag.name, className: tag.attributes["class"] ?? "",
+                                      style: tag.attributes["style"] ?? "")
             }
             return
         }
@@ -657,13 +746,14 @@ public enum PlainTextExtractor {
         /// 開いている強調の要素。
         /// start は開いた時点では決まらない (畳み込んだ空白がまだ出ていない) ので、
         /// 最初の 1 文字が出たときに埋める。
-        private var emphasisStack: [(tag: String, className: String, start: Int?, wideAtStart: Int)] = []
+        private var emphasisStack: [(tag: String, className: String, style: String, start: Int?, wideAtStart: Int)] = []
         /// ここまでに出した全角の文字数。強調が日本語にかかっているかの判断に使う。
         private var wideCharacterCount = 0
         private var styles: [StyleAnnotation] = []
         private var emphasis: [EmphasisAnnotation] = []
         private var lines: [LineAnnotation] = []
         private var tateChuYoko: [Range<Int>] = []
+        private var sizes: [SizeAnnotation] = []
         /// 画像の (置き場所, パス, alt)。置き場所は本文を組み立て終わってから確定する。
         private var images: [(offset: Int, source: String, alt: String)] = []
         private var ruby: [RubyAnnotation] = []
@@ -755,8 +845,8 @@ public enum PlainTextExtractor {
 
         // MARK: 強調表示
 
-        mutating func beginEmphasis(tag: String, className: String) {
-            emphasisStack.append((tag, className, nil, wideCharacterCount))
+        mutating func beginEmphasis(tag: String, className: String, style: String = "") {
+            emphasisStack.append((tag, className, style, nil, wideCharacterCount))
         }
 
         mutating func endEmphasis(tag: String) {
@@ -765,10 +855,21 @@ public enum PlainTextExtractor {
             guard let start = open.start, start < count else { return }
             let range = start..<count
 
+            // style の font-size は class より優先する
+            if let scale = PlainTextExtractor.sizeScale(forStyle: open.style) {
+                sizes.append(SizeAnnotation(range: range, scale: scale))
+            }
             // class で指定されていればそれに従う (青空文庫の注記から変換されたもの)
             let decorations = PlainTextExtractor.decorations(forClass: open.className)
             if !decorations.isEmpty {
                 for decoration in decorations { apply(decoration, to: range) }
+                return
+            }
+            // 見出しは class が無くても大きさを変える
+            if let scale = PlainTextExtractor.headingSizes[open.tag] {
+                if PlainTextExtractor.sizeScale(forStyle: open.style) == nil {
+                    sizes.append(SizeAnnotation(range: range, scale: scale))
+                }
                 return
             }
             switch open.tag {
@@ -800,6 +901,8 @@ public enum PlainTextExtractor {
                 styles.append(StyleAnnotation(range: range, style: style))
             case .tateChuYoko:
                 tateChuYoko.append(range)
+            case .size(let scale):
+                sizes.append(SizeAnnotation(range: range, scale: scale))
             }
         }
 
@@ -1006,10 +1109,14 @@ public enum PlainTextExtractor {
                 return ImageAnnotation(offset: offset, source: image.source, alt: image.alt, isBlock: isAlone)
             }
             let shiftedTateChuYoko = tateChuYoko.compactMap { shift($0, by: leading, limit: length) }
+            let shiftedSizes = sizes.compactMap { annotation -> SizeAnnotation? in
+                guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
+                return SizeAnnotation(range: range, scale: annotation.scale)
+            }
             return ExtractedText(
                 text: text, anchors: adjusted, ruby: shifted, styles: shiftedStyles,
-                emphasis: shiftedEmphasis, lines: shiftedLines,
-                tateChuYoko: shiftedTateChuYoko, images: shiftedImages)
+                emphasis: shiftedEmphasis, lines: shiftedLines, tateChuYoko: shiftedTateChuYoko,
+                sizes: shiftedSizes, images: shiftedImages)
         }
     }
 }

@@ -16,6 +16,7 @@ struct StyleTests {
         styles: [STStyleAnnotation] = [],
         lines: [STLineAnnotation] = [],
         tateChuYoko: [Range<Int>] = [],
+        sizes: [STSizeAnnotation] = [],
         emphasis: [STEmphasisAnnotation] = [],
         ruby: [STRubyAnnotation] = [],
         size: CGSize = CGSize(width: 400, height: 600),
@@ -33,6 +34,7 @@ struct StyleTests {
         label.styleAnnotations = styles
         label.lineAnnotations = lines
         label.tateChuYokoRanges = tateChuYoko
+        label.sizeAnnotations = sizes
         label.emphasisAnnotations = emphasis
         label.rubyAnnotations = ruby
         label.layoutSubviews()
@@ -226,6 +228,51 @@ struct StyleTests {
         let label = makeLabel("大事", emphasis: [STEmphasisAnnotation(range: 0..<2, position: .under)])
         let base = label.context.runs[0..<2]
         #expect(label.rubyRuns.allSatisfy { $0.frame.maxX <= base.map(\.frame.minX).min()! + 0.5 })
+    }
+
+    // MARK: - 文字の大きさ
+
+    @Test func biggerCharactersTakeMoreRoomAlongTheLine() {
+        let plain = makeLabel("あいうえお")
+        let bigger = makeLabel("あいうえお", sizes: [STSizeAnnotation(range: 1..<3, scale: 1.5)])
+        // 指定した文字だけ大きくなる
+        #expect(abs(bigger.context.runs[1].fontSize - 30) < 0.5)
+        #expect(abs(bigger.context.runs[0].fontSize - 20) < 0.5)
+        #expect(abs(bigger.context.runs[1].frame.height - 30) < 0.5)
+        // 後ろの文字はそのぶん先へずれる
+        #expect(abs(bigger.context.runs[3].frame.minY - (plain.context.runs[3].frame.minY + 20)) < 0.5)
+    }
+
+    @Test func smallerCharactersAreCenteredInTheColumn() {
+        let label = makeLabel("あいう", sizes: [STSizeAnnotation(range: 1..<2, scale: 0.5)])
+        let full = label.context.runs[0].frame
+        let small = label.context.runs[1].frame
+        #expect(abs(small.height - 10) < 0.5)
+        // 縦書きでは、小さい文字は 1 文字ぶんの枠の中央に来る
+        #expect(abs(small.midX - full.midX) < 0.5)
+        #expect(small.minX > full.minX)
+    }
+
+    @Test func sizeChangesLineBreaking() {
+        // 1 行 5 文字ぶんの高さ。1 文字を 2 倍にすると 1 文字ぶん早く折り返す
+        let size = CGSize(width: 400, height: 100)
+        let plain = makeLabel("あいうえお", size: size)
+        #expect(plain.layoutedLineCount == 1)
+        let bigger = makeLabel("あいうえお", sizes: [STSizeAnnotation(range: 0..<1, scale: 2)], size: size)
+        #expect(bigger.layoutedLineCount == 2)
+    }
+
+    @Test func sizeIsCappedToTheLineHeight() {
+        // 行送りより大きくすると隣の行とぶつかるので、頭打ちにする (行送り 1.9 倍)
+        let label = makeLabel("大", sizes: [STSizeAnnotation(range: 0..<1, scale: 5)])
+        #expect(abs(label.context.runs[0].fontSize - 20 * 1.9) < 0.5)
+    }
+
+    @Test func biggerCharactersUseABiggerFontWhenDrawn() {
+        let label = makeLabel("あいう", sizes: [STSizeAnnotation(range: 1..<2, scale: 1.5)])
+        let sizes = Set(label.drawBuckets.map { CTFontGetSize($0.ctFont) })
+        #expect(sizes.count == 2)
+        #expect(sizes.contains { abs($0 - 30) < 0.5 })
     }
 
     // MARK: - 縦中横
