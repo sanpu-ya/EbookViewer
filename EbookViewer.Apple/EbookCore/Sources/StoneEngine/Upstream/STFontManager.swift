@@ -97,11 +97,12 @@ extension STFontManager {
         // Create font
         let font = CTFontCreateWithName(fontName as CFString, size, &transform)
         
-        // For plain
-        guard !style.isEmpty else { return font }
+        // For plain (下線などフォントを変えない指定だけなら、そのまま)
+        let traits = style.fontTraits
+        guard !traits.isEmpty else { return font }
         
         // Get styled font (EbookViewer)
-        return styledFont(font, name: fontName, size: size, transform: transform, style: style)
+        return styledFont(font, name: fontName, size: size, transform: transform, style: traits)
     }
     
     /// 太字・斜体にしたフォント (EbookViewer の追加)。

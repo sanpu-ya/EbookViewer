@@ -90,6 +90,83 @@ struct StyleTests {
         #expect(label.context.runs.map(\.style) == [[], .bold])
     }
 
+    // MARK: - 下線
+
+    @Test func underlineDoesNotChangeTheFace() {
+        // 下線は字面を変えないので、同じフォントのまとまりのまま
+        let label = makeLabel("下線つき", styles: [STStyleAnnotation(range: 0..<2, style: .underline)])
+        #expect(fontNames(label) == ["HiraMinProN-W3"])
+        #expect(label.context.runs[0].style == .underline)
+    }
+
+    @Test func underlineIsDrawnBesideTheCharactersInVerticalWriting() {
+        let size = CGSize(width: 200, height: 200)
+        let plain = render(makeLabel("下線つき", size: size), size: size)
+        let underlined = render(
+            makeLabel("下線つき", styles: [STStyleAnnotation(range: 0..<2, style: .underline)], size: size),
+            size: size)
+        // 線のぶんだけ墨が増える
+        #expect(underlined.lazy.filter { $0 > 0 }.count > plain.lazy.filter { $0 > 0 }.count)
+
+        // 縦書きでは文字の右側に、親文字 2 文字ぶんの長さで引かれる
+        let label = makeLabel("下線つき", styles: [STStyleAnnotation(range: 0..<2, style: .underline)], size: size)
+        let base = label.context.runs[0..<2]
+        let column = Int(base.map(\.frame.maxX).max()! - label.rubyExtent + label.underlineThickness)
+        var rows: [Int] = []
+        let width = Int(size.width)
+        for y in 0..<Int(size.height) where underlined[(y * width + column) * 4 + 3] > 0 {
+            rows.append(y)
+        }
+        #expect(rows.first.map { abs(Double($0) - base.map(\.frame.minY).min()!) < 2 } == true)
+        #expect(rows.last.map { abs(Double($0) - base.map(\.frame.maxY).max()!) < 2 } == true)
+    }
+
+    @Test func underlineIsDrawnBelowTheCharactersInHorizontalWriting() {
+        let size = CGSize(width: 200, height: 200)
+        let label = makeLabel(
+            "下線つき", styles: [STStyleAnnotation(range: 0..<2, style: .underline)],
+            size: size, direction: .lrTb)
+        let pixels = render(label, size: size)
+        let width = Int(size.width)
+        let base = label.context.runs[0..<2]
+        // 親文字のすぐ下の行に、親文字の幅ぶんの線がある
+        let row = Int(base.map(\.frame.maxY).max()! + label.underlineThickness * 1.5)
+        let inked = (0..<width).filter { pixels[(row * width + $0) * 4 + 3] > 0 }
+        #expect(!inked.isEmpty)
+        #expect(abs(Double(inked.first!) - base.map(\.frame.minX).min()!) < 2)
+        #expect(abs(Double(inked.last!) - base.map(\.frame.maxX).max()!) < 2)
+    }
+
+    @Test func underlineReservesSpaceSoItIsNotClipped() {
+        let plain = makeLabel("下線")
+        let underlined = makeLabel("下線", styles: [STStyleAnnotation(range: 0..<2, style: .underline)])
+        #expect(plain.rubyExtent == 0)
+        #expect(underlined.rubyExtent > 0)
+        // ルビがあるときは、ルビのぶんの空きで足りるので増えない
+        let withRuby = makeLabel(
+            "下線",
+            styles: [STStyleAnnotation(range: 0..<2, style: .underline)],
+            ruby: [STRubyAnnotation(range: 0..<2, text: "かせん")])
+        #expect(abs(withRuby.rubyExtent - 10) < 0.01)
+    }
+
+    @Test func underlineIsBrokenPerLine() {
+        // 1 行 3 文字の幅で 6 文字に下線を引くと、行ごとに分かれる
+        let label = makeLabel(
+            "あいうえおか", styles: [STStyleAnnotation(range: 0..<6, style: .underline)],
+            size: CGSize(width: 200, height: 60))
+        #expect(Set(label.context.runs.map(\.line)).count == 2)
+        // 行をまたいでも、描かれる線は行ごとに収まっている (高さが 1 行ぶんを超えない)
+        let size = CGSize(width: 200, height: 60)
+        let pixels = render(label, size: size)
+        let width = Int(size.width)
+        var inkRows = 0
+        for y in 0..<Int(size.height) {
+            if (0..<width).contains(where: { pixels[(y * width + $0) * 4 + 3] > 0 }) { inkRows += 1 }
+        }
+        #expect(inkRows <= Int(size.height))
+    }
+
     // MARK: - 圏点
 
     @Test func emphasisPutsAMarkOnEveryCharacter() {

@@ -200,6 +200,29 @@ struct PlainTextExtractorTests {
         #expect(extract("<p>本文</strong></p>").text == "本文")
     }
 
+    @Test func takesUnderlineFromUAndIns() {
+        let r = extract("<p>ここに<u>下線</u>と<ins>追記</ins></p>")
+        #expect(r.text == "ここに下線と追記")
+        #expect(r.styles == [
+            StyleAnnotation(range: 3..<5, style: .underline),
+            StyleAnnotation(range: 6..<8, style: .underline),
+        ])
+        #expect(r.emphasis.isEmpty)
+    }
+
+    @Test func takesUnderlineFromClassNames() {
+        let r = extract("<p><span class=\"underline\">傍線</span></p>")
+        #expect(r.styles == [StyleAnnotation(range: 0..<2, style: .underline)])
+    }
+
+    @Test func underlineCombinesWithBold() {
+        let r = extract("<p><strong><u>太い下線</u></strong></p>")
+        #expect(r.styles == [
+            StyleAnnotation(range: 0..<4, style: .underline),
+            StyleAnnotation(range: 0..<4, style: .bold),
+        ])
+    }
+
     @Test func emphasisRangesFollowTheSurroundingText() {
         let r = extract("<p>前</p><p>中<strong>太字</strong>後</p>")
         #expect(r.text == "前\n中太字後")

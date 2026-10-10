@@ -25,6 +25,12 @@ public struct STTextStyle: OptionSet, Sendable, Hashable {
     public static let bold = STTextStyle(rawValue: 1 << 0)
     /// 斜体。日本語フォントには斜体が無いことが多く、その場合は正体のままになる。
     public static let italic = STTextStyle(rawValue: 1 << 1)
+    /// 下線 (縦書きでは文字の右に引く傍線)。
+    public static let underline = STTextStyle(rawValue: 1 << 2)
+
+    /// フォントを差し替える必要がある指定だけを取り出したもの。
+    /// 下線は字面を変えないので、同じフォントのまとまりとして描ける。
+    var fontTraits: STTextStyle { intersection([.bold, .italic]) }
 }
 
 /// 範囲と、そこにかける字面の変化。

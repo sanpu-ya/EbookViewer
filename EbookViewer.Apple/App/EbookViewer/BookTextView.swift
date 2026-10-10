@@ -82,6 +82,7 @@ final class TextViewCoordinator: TextBridge {
             var style: STTextStyle = []
             if $0.style.contains(.bold) { style.insert(.bold) }
             if $0.style.contains(.italic) { style.insert(.italic) }
+            if $0.style.contains(.underline) { style.insert(.underline) }
             return STStyleAnnotation(range: $0.range, style: style)
         }
         pendingInitial = initial

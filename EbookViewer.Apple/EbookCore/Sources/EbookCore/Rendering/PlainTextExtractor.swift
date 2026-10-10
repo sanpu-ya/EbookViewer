@@ -34,6 +34,8 @@ public struct TextStyle: OptionSet, Sendable, Hashable {
 
     public static let bold = TextStyle(rawValue: 1 << 0)
     public static let italic = TextStyle(rawValue: 1 << 1)
+    /// 下線 (縦書きでは文字の右に引く傍線)。
+    public static let underline = TextStyle(rawValue: 1 << 2)
 }
 
 /// 範囲と、そこにかける字面の変化。
@@ -128,7 +130,13 @@ public enum PlainTextExtractor {
     private static let preformattedTags: Set<String> = ["pre"]
 
     /// 強調を表す要素。
-    static let emphasisTags: Set<String> = ["b", "strong", "em", "i"]
+    static let emphasisTags: Set<String> = ["b", "strong", "em", "i", "u", "ins"]
+
+    /// 下線を表す class か (`<span class="underline">` のような本文)。
+    static func isUnderline(className: String) -> Bool {
+        let name = className.lowercased()
+        return name.contains("underline") || name.contains("bosen") || name.contains("傍線")
+    }
 
     /// 圏点の種類を表す class から、打つ印を決める。傍点を class で指定する本文は多い
     /// (青空文庫からの変換では `<em class="sesame_dot">`)。
@@ -593,14 +601,20 @@ public enum PlainTextExtractor {
             guard let start = open.start, start < count else { return }
             let range = start..<count
 
-            // class で傍点が指定されていればそれに従う
+            // class で傍点・傍線が指定されていればそれに従う
             if let mark = PlainTextExtractor.emphasisMark(forClass: open.className) {
                 emphasis.append(EmphasisAnnotation(range: range, mark: mark))
+                return
+            }
+            if PlainTextExtractor.isUnderline(className: open.className) {
+                styles.append(StyleAnnotation(range: range, style: .underline))
                 return
             }
             switch open.tag {
             case "b", "strong":
                 styles.append(StyleAnnotation(range: range, style: .bold))
+            case "u", "ins":
+                styles.append(StyleAnnotation(range: range, style: .underline))
             case "em", "i":
                 // 日本語には斜体が無いので、全角の文字を含む範囲は圏点にする
                 if wideCharacterCount > open.wideAtStart {

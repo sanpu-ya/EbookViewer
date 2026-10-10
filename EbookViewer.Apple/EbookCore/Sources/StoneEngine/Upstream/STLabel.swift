@@ -230,14 +230,32 @@ open class STLabel: STPlatformView {
     /// 行の脇にルビのために空けておく幅。ルビが無ければ 0。
     /// 二段ルビでは親文字の両側に要るので、上下 (縦書きでは左右) それぞれで数える。
     open func rubyExtent(_ position: STRubyPosition) -> CGFloat {
-        annotations.contains { $0.position == position && !$0.text.isEmpty }
+        let ruby = annotations.contains { $0.position == position && !$0.text.isEmpty }
             ? context.adjustFontSize * rubyFontScale
             : 0
+        // 下線は縦書きなら文字の右 (over)、横書きなら下 (under) に引く
+        let underlineSide: STRubyPosition = context.direction == .tbRl ? .over : .under
+        guard position == underlineSide, hasUnderline else { return ruby }
+        return max(ruby, underlineExtent)
     }
 
     /// 行の両脇にルビのために空けておく幅の合計。
     open var rubyExtent: CGFloat {
         STRubyPosition.allCases.reduce(0) { $0 + rubyExtent($1) }
+    }
+
+    private var hasUnderline: Bool {
+        styleAnnotations.contains { $0.style.contains(.underline) }
+    }
+
+    /// 下線の太さ。
+    open var underlineThickness: CGFloat {
+        max(1, (context.adjustFontSize / 18).rounded())
+    }
+
+    /// 下線のために文字の脇へ空けておく幅 (線の太さと、文字との間の空き)。
+    private var underlineExtent: CGFloat {
+        underlineThickness * 2
     }
 
     /// 組み終わったルビ。親文字のレイアウトのあとに置き場所を決める。
@@ -574,15 +592,15 @@ open class STLabel: STPlatformView {
     ) -> Int {
         if let index = drawBuckets.firstIndex(where: {
             $0.fontId == fontId && $0.isClockwise == isClockwise && $0.needsToFlip == needsToFlip
-                && $0.isRuby == isRuby && $0.style == style
+                && $0.isRuby == isRuby && $0.style == style.fontTraits
         }) {
             return index
         }
         let size = isRuby ? context.adjustFontSize * rubyFontScale : context.adjustFontSize
         let ctFont = context.fontManager.ctFont(fontId: fontId, size: size, isClockwise: isClockwise, style: style)
         drawBuckets.append(DrawBucket(
-            fontId: fontId, isClockwise: isClockwise, needsToFlip: needsToFlip, isRuby: isRuby, style: style,
-            ctFont: ctFont, glyphs: [], positions: [], frames: []))
+            fontId: fontId, isClockwise: isClockwise, needsToFlip: needsToFlip, isRuby: isRuby,
+            style: style.fontTraits, ctFont: ctFont, glyphs: [], positions: [], frames: []))
         return drawBuckets.count - 1
     }
 
@@ -687,8 +705,52 @@ open class STLabel: STPlatformView {
         }
     }
 
+    /// 下線 (縦書きでは文字の右に引く傍線) を描く。
+    /// 字面を変えずに引くものなので、グリフとは別に、続いている文字をまとめて 1 本にする。
+    private func drawUnderlines(_ dirtyRect: CGRect) {
+        guard hasUnderline, let cgContext = UIGraphicsGetCurrentContext() else { return }
+        cgContext.setFillColor(context.textColor.cgColor)
+        let lineRange: Range<Int>? = isPaged ? pageLineRange : nil
+        let translation = contentTranslation
+        let thickness = underlineThickness
+
+        var group: CGRect = .null
+        var previous = -2
+        var previousLine = -1
+
+        func flush() {
+            guard !group.isNull else { return }
+            var rect: CGRect
+            switch context.direction {
+            case .tbRl:
+                rect = CGRect(x: group.maxX + thickness, y: group.minY, width: thickness, height: group.height)
+            case .lrTb:
+                rect = CGRect(x: group.minX, y: group.maxY + thickness, width: group.width, height: thickness)
+            }
+            rect = rect.offsetBy(dx: translation.x, dy: translation.y)
+            cgContext.fill(rect)
+            group = .null
+        }
+
+        for (index, run) in context.runs.enumerated() {
+            guard run.style.contains(.underline), !run.char.isNewline else { continue }
+            if let lineRange {
+                guard lineRange.contains(run.line) else { continue }
+            } else if run.isHidden {
+                continue
+            }
+            // 行が変わるか、間が空いたら別の線にする
+            if index != previous + 1 || run.line != previousLine { flush() }
+            group = group.isNull ? run.frame : group.union(run.frame)
+            previous = index
+            previousLine = run.line
+        }
+        flush()
+    }
+
     open override func draw(_ dirtyRect: CGRect) {
         // Draw
+        drawUnderlines(dirtyRect)
         drawGlyphs(dirtyRect)
 
         // For test
