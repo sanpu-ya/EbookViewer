@@ -644,12 +644,16 @@ open class STLabel: STPlatformView {
     }
 
     /// いま出すべき横組みのブロックだけを見せる。
+    /// 色は組み直しを伴わずに変わる (テーマの切り替え) ので、ここで合わせ直す。
     private func updateHorizontalVisibility() {
         var shown: (block: Int, page: Int)?
         if isPaged, case .horizontal(let block, let page) = currentPage { shown = (block, page) }
         for (index, label) in horizontalLabels.enumerated() {
+            if label.textColor != textColor { label.textColor = textColor }
+            if label.backgroundColor != backgroundColor { label.backgroundColor = backgroundColor }
             label.isHidden = shown?.block != index
             if let shown, shown.block == index { label.pageIndex = shown.page }
+            label.setNeedsDisplay()
         }
     }
 
