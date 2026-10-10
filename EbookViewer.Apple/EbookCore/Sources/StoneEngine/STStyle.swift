@@ -58,12 +58,16 @@ public struct STIndentAnnotation: Equatable, Sendable {
     public var range: Range<Int>
     /// 行の始まりに空ける文字数。
     public var head: CGFloat
+    /// 折り返した行の始まりに空ける文字数 (青空文庫の「折り返して N 字下げ」)。
+    /// nil なら折り返した行も `head` と同じだけ下げる。
+    public var hanging: CGFloat?
     /// 行末へ寄せるなら、行の終わりに空ける文字数。寄せないなら nil。
     public var tail: CGFloat?
 
-    public init(range: Range<Int>, head: CGFloat = 0, tail: CGFloat? = nil) {
+    public init(range: Range<Int>, head: CGFloat = 0, hanging: CGFloat? = nil, tail: CGFloat? = nil) {
         self.range = range
         self.head = head
+        self.hanging = hanging
         self.tail = tail
     }
 }

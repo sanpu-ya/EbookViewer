@@ -608,10 +608,12 @@ open class STLabel: STPlatformView {
     private func applyIndents() {
         guard !indentAnnotations.isEmpty, let text, !text.isEmpty else {
             context.indents = []
+            context.hangingIndents = []
             context.trailingGaps = []
             return
         }
         var indents = [CGFloat](repeating: 0, count: text.count)
+        var hangings = [CGFloat?](repeating: nil, count: text.count)
         var trailings = [CGFloat?](repeating: nil, count: text.count)
         let em = context.adjustFontSize
         for annotation in indentAnnotations {
@@ -620,10 +622,12 @@ open class STLabel: STPlatformView {
             guard lower < upper else { continue }
             for i in lower..<upper {
                 if annotation.head != 0 { indents[i] = annotation.head * em }
+                if let hanging = annotation.hanging { hangings[i] = hanging * em }
                 if let tail = annotation.tail { trailings[i] = tail * em }
             }
         }
         context.indents = indents
+        context.hangingIndents = hangings
         context.trailingGaps = trailings
     }
 

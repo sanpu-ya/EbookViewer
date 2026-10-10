@@ -329,6 +329,18 @@ struct PlainTextExtractorTests {
             == [IndentAnnotation(range: 0..<3, head: 2)])
     }
 
+    @Test func takesHangingIndentFromMarginAndNegativeTextIndent() {
+        // 青空文庫の「ここから2字下げ、折り返して3字下げ」
+        #expect(extract("<div class=\"burasage\" style=\"margin-left: 3em; text-indent: -1em;\">折り返し</div>").indents
+            == [IndentAnnotation(range: 0..<4, head: 2, hanging: 3)])
+        // 「ここから改行天付き、折り返して1字下げ」(1 行目は下げない)
+        #expect(extract("<div class=\"burasage\" style=\"margin-left: 1em; text-indent: -1em;\">折り返し</div>").indents
+            == [IndentAnnotation(range: 0..<4, head: 0, hanging: 1)])
+        // ふつうの字下げは折り返しも同じ位置から始まる
+        #expect(extract("<div class=\"jisage_3\" style=\"margin-left: 3em\">字下げ</div>").indents
+            == [IndentAnnotation(range: 0..<3, head: 3, hanging: nil)])
+    }
+
     @Test func indentCoversTheWholeBlock() {
         let r = extract("<p>本文</p><div class=\"jisage_2\">引用の一行目\n引用の二行目</div><p>本文</p>")
         #expect(r.indents.count == 1)

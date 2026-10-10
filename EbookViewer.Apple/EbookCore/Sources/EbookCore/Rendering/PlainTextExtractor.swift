@@ -82,12 +82,16 @@ public struct IndentAnnotation: Equatable, Sendable {
     public let range: Range<Int>
     /// 行の始まりに空ける文字数。
     public let head: Double
+    /// 折り返した行の始まりに空ける文字数 (青空文庫の「折り返して N 字下げ」)。
+    /// nil なら折り返した行も `head` と同じだけ下げる。
+    public let hanging: Double?
     /// 行末へ寄せるなら、行の終わりに空ける文字数。寄せないなら nil。
     public let tail: Double?
 
-    public init(range: Range<Int>, head: Double = 0, tail: Double? = nil) {
+    public init(range: Range<Int>, head: Double = 0, hanging: Double? = nil, tail: Double? = nil) {
         self.range = range
         self.head = head
+        self.hanging = hanging
         self.tail = tail
     }
 }
@@ -256,8 +260,8 @@ public enum PlainTextExtractor {
         case tateChuYoko
         /// 文字の大きさ (ふつうの文字に対する比)。
         case size(Double)
-        /// 字下げ (行の始まりに空ける文字数)。
-        case indent(Double)
+        /// 字下げ (行の始まりに空ける文字数と、折り返した行の字下げ)。
+        case indent(head: Double, hanging: Double?)
         /// 地付き・地寄せ (行の終わりに空ける文字数)。
         case trailing(Double)
         /// 割り注。
@@ -288,9 +292,15 @@ public enum PlainTextExtractor {
     }
 
     /// class 名から文字の修飾を決める。複数の語を含む class でも拾えるよう、語ごとに見る。
+    /// 1 つの語が 2 つ以上の修飾を表すこともある (上付き小文字は「小さく」かつ「上へ寄せる」)。
     static func decorations(forClass className: String) -> [Decoration] {
         let names = className.lowercased().split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
-        return names.compactMap(decoration(forClassName:))
+        return names.flatMap(decorations(forClassName:))
+    }
+
+    private static func decorations(forClassName name: String) -> [Decoration] {
+        guard let decoration = decoration(forClassName: name) else { return [] }
+        return [decoration]
     }
 
     private static func decoration(forClassName name: String) -> Decoration? {
@@ -388,10 +398,13 @@ public enum PlainTextExtractor {
     }
 
     /// 字下げ・地付きを表す class。`jisage_3` や `chitsuki_2` のように字数が付く。
+    ///
+    /// 「折り返して N 字下げ」の `burasage` は字数を class に持たないので、
+    /// 字下げの量は `style` (`margin-left` と負の `text-indent`) から読む。
     private static func indentDecoration(forClassName name: String) -> Decoration? {
-        if name == "jisage" || name == "indent" { return .indent(1) }
-        if let n = step(of: name, prefix: "jisage_") { return .indent(Double(n)) }
-        if let n = step(of: name, prefix: "jisage") { return .indent(Double(n)) }
+        if name == "jisage" || name == "indent" { return .indent(head: 1, hanging: nil) }
+        if let n = step(of: name, prefix: "jisage_") { return .indent(head: Double(n), hanging: nil) }
+        if let n = step(of: name, prefix: "jisage") { return .indent(head: Double(n), hanging: nil) }
         if name == "chitsuki" || name == "jitsuki" { return .trailing(0) }
         if let n = step(of: name, prefix: "chitsuki_") { return .trailing(Double(n)) }
         if let n = step(of: name, prefix: "chitsuki") { return .trailing(Double(n)) }
@@ -399,19 +412,28 @@ public enum PlainTextExtractor {
     }
 
     /// `style="margin-left: 3em"` などから字下げを読む (縦書きでは margin-right)。
-    static func indent(forStyle style: String) -> Double? {
-        for property in ["margin-left", "margin-right", "text-indent", "padding-left", "padding-right"] {
-            if let value = emValue(of: property, in: style), value > 0 { return value }
+    ///
+    /// 「折り返して N 字下げ」は `margin-left: 3em; text-indent: -1em` のように、
+    /// 折り返した行の字下げを margin で、1 行目との差を負の text-indent で表す
+    /// (CSS のぶら下げインデント)。そのときは 1 行目と折り返しの両方を返す。
+    static func indent(forStyle style: String) -> (head: Double, hanging: Double?)? {
+        let margin = ["margin-left", "margin-right", "padding-left", "padding-right"]
+            .lazy.compactMap { emValue(of: $0, in: style) }.first { $0 > 0 }
+        let textIndent = emValue(of: "text-indent", in: style)
+        if let margin, let textIndent, textIndent < 0 {
+            return (head: max(0, margin + textIndent), hanging: margin)
         }
+        if let margin { return (head: margin, hanging: nil) }
+        if let textIndent, textIndent > 0 { return (head: textIndent, hanging: nil) }
         return nil
     }
 
-    /// `style` から `property` の値を em で読む。
+    /// `style` から `property` の値を em で読む (負の値も読む)。
     private static func emValue(of property: String, in style: String) -> Double? {
         let lowered = style.lowercased()
         guard let range = lowered.range(of: property) else { return nil }
         let value = lowered[range.upperBound...].drop { $0 == ":" || $0 == " " }
-        let number = value.prefix { $0.isNumber || $0 == "." }
+        let number = value.prefix { $0.isNumber || $0 == "." || $0 == "-" }
         guard let amount = Double(number) else { return nil }
         return value.dropFirst(number.count).hasPrefix("em") ? amount : nil
     }
@@ -949,8 +971,9 @@ public enum PlainTextExtractor {
                 sizes.append(SizeAnnotation(range: range, scale: scale))
             }
             let styleIndent = PlainTextExtractor.indent(forStyle: open.style)
-            if let head = styleIndent {
-                indents.append(IndentAnnotation(range: range, head: head))
+            if let styleIndent {
+                indents.append(IndentAnnotation(
+                    range: range, head: styleIndent.head, hanging: styleIndent.hanging))
             }
             // class で指定されていればそれに従う (青空文庫の注記から変換されたもの)。
             // 青空文庫の HTML は class と style の両方を持つので、字下げは style を優先する
@@ -999,8 +1022,8 @@ public enum PlainTextExtractor {
                 tateChuYoko.append(range)
             case .size(let scale):
                 sizes.append(SizeAnnotation(range: range, scale: scale))
-            case .indent(let head):
-                indents.append(IndentAnnotation(range: range, head: head))
+            case .indent(let head, let hanging):
+                indents.append(IndentAnnotation(range: range, head: head, hanging: hanging))
             case .trailing(let tail):
                 indents.append(IndentAnnotation(range: range, tail: tail))
             case .warichu:
@@ -1219,7 +1242,8 @@ public enum PlainTextExtractor {
             }
             let shiftedIndents = indents.compactMap { annotation -> IndentAnnotation? in
                 guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
-                return IndentAnnotation(range: range, head: annotation.head, tail: annotation.tail)
+                return IndentAnnotation(
+                    range: range, head: annotation.head, hanging: annotation.hanging, tail: annotation.tail)
             }
             let shiftedWarichu = warichu.compactMap { shift($0, by: leading, limit: length) }
             let shiftedBoxes = boxes.compactMap { annotation -> LineAnnotation? in

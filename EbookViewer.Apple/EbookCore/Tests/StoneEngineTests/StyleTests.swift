@@ -369,6 +369,29 @@ struct StyleTests {
         #expect(abs(label.context.runs[3].frame.minY - 40) < 0.5)
     }
 
+    @Test func hangingIndentOnlyMovesTheWrappedLines() {
+        // 「ここから1字下げ、折り返して3字下げ」。1 行 5 文字ぶんの高さ
+        let size = CGSize(width: 400, height: 100)
+        let label = makeLabel(
+            "あいうえおかきくけこ",
+            indents: [STIndentAnnotation(range: 0..<10, head: 1, hanging: 3)], size: size)
+        #expect(label.layoutedLineCount > 1)
+        // 1 行目は 1 字下げ、折り返した行は 3 字下げ
+        #expect(abs(label.context.runs[0].frame.minY - 20) < 0.5)
+        for line in 1..<label.layoutedLineCount {
+            let first = label.context.runs.first { $0.line == line }!
+            #expect(abs(first.frame.minY - 60) < 0.5)
+        }
+    }
+
+    @Test func hangingIndentStartsEveryParagraphAtTheHeadIndent() {
+        // 折り返しではなく改行で始まる行は、1 行目と同じ字下げになる
+        let label = makeLabel(
+            "あい\nうえ", indents: [STIndentAnnotation(range: 0..<5, head: 1, hanging: 3)])
+        #expect(abs(label.context.runs[0].frame.minY - 20) < 0.5)
+        #expect(abs(label.context.runs[3].frame.minY - 20) < 0.5)
+    }
+
     @Test func trailingAlignmentPushesTheLineToTheEnd() {
         // 地付き: 行の終わりにそろえる
         let size = CGSize(width: 400, height: 200)

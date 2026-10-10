@@ -290,7 +290,7 @@ class STLayout {
         }
         
         // Go next line (EbookViewer: 次の行の字下げぶんだけ空ける)
-        x = minX + context.indent(at: runId + 1)
+        x = minX + context.indent(at: runId + 1, isWrapped: isWrapped)
         y += context.adjustLineHeight
     }
     
@@ -332,7 +332,14 @@ class STLayout {
         
         // Go next line (EbookViewer: 次の行の字下げぶんだけ空ける)
         x -= context.adjustLineHeight
-        y = context.indent(at: runId + 1)
+        y = context.indent(at: runId + 1, isWrapped: isWrapped)
+    }
+    
+    /// いまの行が折り返しで終わるか (改行で終わるのではないか)。
+    /// 次の行の字下げを「折り返して N 字下げ」にするかの判断に使う (EbookViewer)。
+    private var isWrapped: Bool {
+        guard runId < context.runs.count else { return false }
+        return !context.runs[runId].char.isNewline
     }
     
     private func goNextLine() {

@@ -77,6 +77,9 @@ open class STContext {
     // Indent (EbookViewer)
     /// 文字ごとの字下げ。その文字から行が始まるときに、行の始まりへ空ける長さ。
     public var indents: [CGFloat] = []
+    /// 文字ごとの、折り返した行の字下げ (青空文庫の「折り返して N 字下げ」)。
+    /// nil なら折り返した行も `indents` と同じだけ下げる。
+    public var hangingIndents: [CGFloat?] = []
     /// 文字ごとの地付き・地寄せ。nil なら寄せない。値は行の終わりへ空ける長さ。
     public var trailingGaps: [CGFloat?] = []
     
@@ -84,6 +87,15 @@ open class STContext {
     public func indent(at runId: Int) -> CGFloat {
         guard runId >= 0, runId < indents.count else { return 0 }
         return max(0, indents[runId])
+    }
+    
+    /// runId の run から行が始まるときの字下げ。`isWrapped` は、改行ではなく
+    /// 行が折り返して始まる行かどうか。折り返した行には hangingIndents を使う。
+    public func indent(at runId: Int, isWrapped: Bool) -> CGFloat {
+        if isWrapped, runId >= 0, runId < hangingIndents.count, let hanging = hangingIndents[runId] {
+            return max(0, hanging)
+        }
+        return indent(at: runId)
     }
     
     /// runId の run から始まる行を、行末へ寄せるか (寄せるなら行末に空ける長さ)。
