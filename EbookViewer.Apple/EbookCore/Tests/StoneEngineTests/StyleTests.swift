@@ -17,6 +17,7 @@ struct StyleTests {
         lines: [STLineAnnotation] = [],
         tateChuYoko: [Range<Int>] = [],
         sizes: [STSizeAnnotation] = [],
+        shifts: [STShiftAnnotation] = [],
         indents: [STIndentAnnotation] = [],
         warichu: [Range<Int>] = [],
         boxes: [STBoxAnnotation] = [],
@@ -38,6 +39,7 @@ struct StyleTests {
         label.lineAnnotations = lines
         label.tateChuYokoRanges = tateChuYoko
         label.sizeAnnotations = sizes
+        label.shiftAnnotations = shifts
         label.indentAnnotations = indents
         label.warichuRanges = warichu
         label.boxAnnotations = boxes
@@ -337,6 +339,48 @@ struct StyleTests {
         // すべて同じ位置 (行の幅の中央) に並んだまま
         let xs = Set(label.context.runs.map { ($0.frame.minX * 10).rounded() })
         #expect(xs.count == Set(label.context.runs.map(\.line)).count)
+    }
+
+    // MARK: - 上付き・下付き
+
+    @Test func superscriptMovesTheSmallCharacterToTheSideOfTheLine() {
+        // 縦書きでは上付きが行の右、下付きが行の左。文字は 20pt、小文字は 12pt なので
+        // 枠の中央にそろえたところから左右へ 4pt ずつ動く
+        let small = [STSizeAnnotation(range: 1..<2, scale: 0.6)]
+        let centered = makeLabel("あいう", sizes: small)
+        let up = makeLabel(
+            "あいう", sizes: small, shifts: [STShiftAnnotation(range: 1..<2, side: .over)])
+        let down = makeLabel(
+            "あいう", sizes: small, shifts: [STShiftAnnotation(range: 1..<2, side: .under)])
+        #expect(abs(up.context.runs[1].frame.minX - (centered.context.runs[1].frame.minX + 4)) < 0.5)
+        #expect(abs(down.context.runs[1].frame.minX - (centered.context.runs[1].frame.minX - 4)) < 0.5)
+        // ふつうの大きさの文字の枠からははみ出さない
+        #expect(up.context.runs[1].frame.maxX <= up.context.runs[0].frame.maxX + 0.5)
+        #expect(down.context.runs[1].frame.minX >= down.context.runs[0].frame.minX - 0.5)
+    }
+
+    @Test func superscriptIsRaisedInHorizontalText() {
+        // 横書きでは上付きが上、下付きが下
+        let small = [STSizeAnnotation(range: 1..<2, scale: 0.6)]
+        let base = makeLabel("あいう", sizes: small, direction: .lrTb)
+        let up = makeLabel(
+            "あいう", sizes: small, shifts: [STShiftAnnotation(range: 1..<2, side: .over)],
+            direction: .lrTb)
+        let down = makeLabel(
+            "あいう", sizes: small, shifts: [STShiftAnnotation(range: 1..<2, side: .under)],
+            direction: .lrTb)
+        // ベースラインが小さくしたぶんの半分 (4pt) だけ上下する
+        #expect(abs(up.context.runs[1].frame.minY - (base.context.runs[1].frame.minY - 4)) < 0.5)
+        #expect(abs(down.context.runs[1].frame.minY - (base.context.runs[1].frame.minY + 4)) < 0.5)
+        // 上付きはふつうの大きさの文字の上端より上には出ない
+        #expect(up.context.runs[1].frame.minY >= up.context.runs[0].frame.minY - 0.5)
+    }
+
+    @Test func superscriptDoesNotMoveFullSizeCharacters() {
+        // 小さくしていない文字は、寄せ先が無いので動かない
+        let plain = makeLabel("あいう")
+        let shifted = makeLabel("あいう", shifts: [STShiftAnnotation(range: 1..<2, side: .over)])
+        #expect(plain.context.runs[1].frame == shifted.context.runs[1].frame)
     }
 
     // MARK: - 字下げ・地付き

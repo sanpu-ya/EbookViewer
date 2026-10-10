@@ -243,6 +243,15 @@ open class STLabel: STPlatformView {
         }
     }
 
+    /// 上付き・下付きにする範囲。小さくした文字を 1 文字ぶんの枠の端へ寄せる。
+    /// 小さくするのは sizeAnnotations の役目なので、ふつうは両方を指定する。
+    open var shiftAnnotations: [STShiftAnnotation] = [] {
+        didSet {
+            guard shiftAnnotations != oldValue else { return }
+            setNeedsLayout()
+        }
+    }
+
     /// 文字の大きさを変える範囲。行送りは変わらないので、行送り (lineHeightScale) を
     /// 超える大きさにはならない (隣の行とぶつからないように頭打ちにする)。
     open var sizeAnnotations: [STSizeAnnotation] = [] {
@@ -547,6 +556,8 @@ open class STLabel: STPlatformView {
         context.forcedTateChuYoko = Set(tateChuYokoRanges.flatMap { $0 })
         // 文字ごとの大きさ
         context.sizeScales = makeSizeScales()
+        // 上付き・下付き
+        context.shifts = makeShifts()
         // 字下げ・地付き
         applyIndents()
 
@@ -651,6 +662,19 @@ open class STLabel: STPlatformView {
         return scales
     }
 
+    /// 範囲ごとの指定を、文字ごとの寄せ方の配列にする。重なっていたら後の指定が勝つ。
+    private func makeShifts() -> [STRubyPosition?] {
+        guard !shiftAnnotations.isEmpty, let text, !text.isEmpty else { return [] }
+        var shifts = [STRubyPosition?](repeating: nil, count: text.count)
+        for annotation in shiftAnnotations {
+            let lower = max(0, annotation.range.lowerBound)
+            let upper = min(shifts.count, annotation.range.upperBound)
+            guard lower < upper else { continue }
+            for i in lower..<upper { shifts[i] = annotation.side }
+        }
+        return shifts
+    }
+
     /// 範囲ごとの指定を、文字ごとの字面の配列にする。
     private func makeStyles() -> [STTextStyle] {
         guard !styleAnnotations.isEmpty, let text, !text.isEmpty else { return [] }
@@ -690,6 +714,7 @@ open class STLabel: STPlatformView {
         var lineAnnotations: [STLineAnnotation]
         var boxAnnotations: [STBoxAnnotation]
         var sizeAnnotations: [STSizeAnnotation]
+        var shiftAnnotations: [STShiftAnnotation]
         var indentAnnotations: [STIndentAnnotation]
         var warichuRanges: [Range<Int>]
         var tateChuYokoRanges: [Range<Int>]
@@ -726,6 +751,7 @@ open class STLabel: STPlatformView {
             lineAnnotations: lineAnnotations,
             boxAnnotations: boxAnnotations,
             sizeAnnotations: sizeAnnotations,
+            shiftAnnotations: shiftAnnotations,
             indentAnnotations: indentAnnotations,
             warichuRanges: warichuRanges,
             tateChuYokoRanges: tateChuYokoRanges,

@@ -96,6 +96,21 @@ public struct IndentAnnotation: Equatable, Sendable {
     }
 }
 
+/// 上付き・下付きにする範囲 (青空文庫の「上付き小文字」「下付き小文字」と
+/// 「行右小書き」「行左小書き」)。文字を小さくするのは `SizeAnnotation` の役目で、
+/// こちらは小さくした文字をどちら側へ寄せるかだけを表す。
+public struct ShiftAnnotation: Equatable, Sendable {
+    /// 範囲 (`ExtractedText.text` の Character 単位、0 始まり)。
+    public let range: Range<Int>
+    /// 寄せる側。`.over` が上付き (縦書きでは行の右)、`.under` が下付き (行の左)。
+    public let position: RubyPosition
+
+    public init(range: Range<Int>, position: RubyPosition) {
+        self.range = range
+        self.position = position
+    }
+}
+
 /// 文字の大きさを変える範囲。
 public struct SizeAnnotation: Equatable, Sendable {
     /// 範囲 (`ExtractedText.text` の Character 単位、0 始まり)。
@@ -163,6 +178,8 @@ public struct ExtractedText: Sendable {
     public let tateChuYoko: [Range<Int>]
     /// 見出しや文字サイズの注記から取り出した、文字の大きさ。
     public let sizes: [SizeAnnotation]
+    /// 上付き・下付きの注記から取り出した、文字を寄せる側。
+    public let shifts: [ShiftAnnotation]
     /// 字下げ・地付きの注記から取り出した、行の始まりと終わりの空き。
     public let indents: [IndentAnnotation]
     /// 割り注 (`<span class="warichu">`) にする範囲。
@@ -181,6 +198,7 @@ public struct ExtractedText: Sendable {
         lines: [LineAnnotation] = [],
         tateChuYoko: [Range<Int>] = [],
         sizes: [SizeAnnotation] = [],
+        shifts: [ShiftAnnotation] = [],
         indents: [IndentAnnotation] = [],
         warichu: [Range<Int>] = [],
         boxes: [LineAnnotation] = [],
@@ -194,6 +212,7 @@ public struct ExtractedText: Sendable {
         self.lines = lines
         self.tateChuYoko = tateChuYoko
         self.sizes = sizes
+        self.shifts = shifts
         self.indents = indents
         self.warichu = warichu
         self.boxes = boxes
@@ -239,7 +258,9 @@ public enum PlainTextExtractor {
     private static let preformattedTags: Set<String> = ["pre"]
 
     /// 強調を表す要素。
-    static let emphasisTags: Set<String> = ["b", "strong", "em", "i", "u", "ins", "s", "strike", "del"]
+    static let emphasisTags: Set<String> = [
+        "b", "strong", "em", "i", "u", "ins", "s", "strike", "del", "sup", "sub",
+    ]
 
     /// 字下げ・地付きがかかるブロック要素。
     static let indentContainerTags: Set<String> = ["div", "p", "blockquote", "li", "dd"]
@@ -260,6 +281,8 @@ public enum PlainTextExtractor {
         case tateChuYoko
         /// 文字の大きさ (ふつうの文字に対する比)。
         case size(Double)
+        /// 上付き・下付き (小さくした文字を寄せる側)。
+        case shift(RubyPosition)
         /// 字下げ (行の始まりに空ける文字数と、折り返した行の字下げ)。
         case indent(head: Double, hanging: Double?)
         /// 地付き・地寄せ (行の終わりに空ける文字数)。
@@ -299,8 +322,29 @@ public enum PlainTextExtractor {
     }
 
     private static func decorations(forClassName name: String) -> [Decoration] {
+        // 上付き・下付きは「小さくする」と「端へ寄せる」の 2 つ
+        if let side = shiftSide(forClassName: name) {
+            return [.size(superscriptScale), .shift(side)]
+        }
         guard let decoration = decoration(forClassName: name) else { return [] }
         return [decoration]
+    }
+
+    /// 上付き・下付きの文字の大きさ。端へ寄せても隣の行とぶつからないよう、
+    /// ふつうの小さな文字 (83%) より小さくする。
+    static let superscriptScale = 0.6
+
+    /// 上付き・下付きを表す class。縦組みの「行右小書き」「行左小書き」も同じ扱いにする
+    /// (行の右 = 上付き、行の左 = 下付き)。
+    static func shiftSide(forClassName name: String) -> RubyPosition? {
+        switch name {
+        case "superscript", "sup", "upperright", "upr", "gyomigi":
+            return .over
+        case "subscript", "sub", "lowerleft", "swr", "gyohidari":
+            return .under
+        default:
+            return nil
+        }
     }
 
     private static func decoration(forClassName name: String) -> Decoration? {
@@ -384,8 +428,7 @@ public enum PlainTextExtractor {
         case "chap2", "naka-midashi", "dogyo-naka-midashi", "mado-naka-midashi": return 1.20
         case "chap3", "ko-midashi", "dogyo-ko-midashi", "mado-ko-midashi": return 1.10
         // font-size: smaller 相当
-        case "notes", "caption", "kaeriten", "okurigana", "superscript", "subscript",
-             "sup", "sub", "upr", "swr":
+        case "notes", "caption", "kaeriten", "okurigana":
             return 0.83
         default: return nil
         }
@@ -862,6 +905,7 @@ public enum PlainTextExtractor {
         private var lines: [LineAnnotation] = []
         private var tateChuYoko: [Range<Int>] = []
         private var sizes: [SizeAnnotation] = []
+        private var shifts: [ShiftAnnotation] = []
         private var indents: [IndentAnnotation] = []
         private var warichu: [Range<Int>] = []
         private var boxes: [LineAnnotation] = []
@@ -998,6 +1042,10 @@ public enum PlainTextExtractor {
                 lines.append(LineAnnotation(range: range, style: .solid, position: .underline))
             case "s", "strike", "del":
                 lines.append(LineAnnotation(range: range, style: .solid, position: .strikethrough))
+            case "sup", "sub":
+                // <sup> / <sub> は小さくして端へ寄せる
+                sizes.append(SizeAnnotation(range: range, scale: PlainTextExtractor.superscriptScale))
+                shifts.append(ShiftAnnotation(range: range, position: open.tag == "sup" ? .over : .under))
             case "em", "i":
                 // 日本語には斜体が無いので、全角の文字を含む範囲は圏点にする
                 if wideCharacterCount > open.wideAtStart {
@@ -1022,6 +1070,8 @@ public enum PlainTextExtractor {
                 tateChuYoko.append(range)
             case .size(let scale):
                 sizes.append(SizeAnnotation(range: range, scale: scale))
+            case .shift(let position):
+                shifts.append(ShiftAnnotation(range: range, position: position))
             case .indent(let head, let hanging):
                 indents.append(IndentAnnotation(range: range, head: head, hanging: hanging))
             case .trailing(let tail):
@@ -1245,6 +1295,10 @@ public enum PlainTextExtractor {
                 return IndentAnnotation(
                     range: range, head: annotation.head, hanging: annotation.hanging, tail: annotation.tail)
             }
+            let shiftedShifts = shifts.compactMap { annotation -> ShiftAnnotation? in
+                guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
+                return ShiftAnnotation(range: range, position: annotation.position)
+            }
             let shiftedWarichu = warichu.compactMap { shift($0, by: leading, limit: length) }
             let shiftedBoxes = boxes.compactMap { annotation -> LineAnnotation? in
                 guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
@@ -1253,7 +1307,7 @@ public enum PlainTextExtractor {
             return ExtractedText(
                 text: text, anchors: adjusted, ruby: shifted, styles: shiftedStyles,
                 emphasis: shiftedEmphasis, lines: shiftedLines, tateChuYoko: shiftedTateChuYoko,
-                sizes: shiftedSizes, indents: shiftedIndents, warichu: shiftedWarichu,
+                sizes: shiftedSizes, shifts: shiftedShifts, indents: shiftedIndents, warichu: shiftedWarichu,
                 boxes: shiftedBoxes, images: shiftedImages)
         }
     }

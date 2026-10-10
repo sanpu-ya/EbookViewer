@@ -93,6 +93,9 @@ final class TextViewCoordinator: TextBridge {
         label.sizeAnnotations = content.sizes.map {
             STSizeAnnotation(range: $0.range, scale: $0.scale)
         }
+        label.shiftAnnotations = content.shifts.map {
+            STShiftAnnotation(range: $0.range, side: $0.position == .under ? .under : .over)
+        }
         label.warichuRanges = content.warichu
         label.boxAnnotations = content.boxes.map {
             STBoxAnnotation(range: $0.range, style: Self.lineStyle($0.style))
@@ -122,6 +125,7 @@ final class TextViewCoordinator: TextBridge {
         label.lineAnnotations = []
         label.tateChuYokoRanges = []
         label.sizeAnnotations = []
+        label.shiftAnnotations = []
         label.indentAnnotations = []
         label.warichuRanges = []
         label.boxAnnotations = []

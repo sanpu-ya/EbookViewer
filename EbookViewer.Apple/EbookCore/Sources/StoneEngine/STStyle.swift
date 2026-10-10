@@ -72,6 +72,23 @@ public struct STIndentAnnotation: Equatable, Sendable {
     }
 }
 
+/// 上付き・下付きにする範囲 (青空文庫の「上付き小文字」「下付き小文字」と
+/// 「行右小書き」「行左小書き」)。
+///
+/// 文字を小さくするのは `STSizeAnnotation` の役目で、こちらは小さくした文字を
+/// 1 文字ぶんの枠のどちら側へ寄せるかだけを決める。
+public struct STShiftAnnotation: Equatable, Sendable {
+    /// 範囲 (STLabel.text の Character 単位、0 始まり)。
+    public var range: Range<Int>
+    /// 寄せる側。`.over` が上付き (縦書きでは行の右)、`.under` が下付き (行の左)。
+    public var side: STRubyPosition
+
+    public init(range: Range<Int>, side: STRubyPosition) {
+        self.range = range
+        self.side = side
+    }
+}
+
 /// 圏点 (傍点) を打つ範囲。
 public struct STEmphasisAnnotation: Equatable, Sendable {
     /// 範囲 (STLabel.text の Character 単位、0 始まり)。

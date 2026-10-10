@@ -117,6 +117,17 @@ open class STContext {
         return min(max(0.2, sizeScales[runId]), maxSizeScale)
     }
     
+    // Superscript and subscript (EbookViewer)
+    /// 文字ごとの、1 文字ぶんの枠の中で寄せる側。nil なら中央にそろえる (ふつうの文字)。
+    /// 添字は run の添字。
+    public var shifts: [STRubyPosition?] = []
+    
+    /// runId の run を枠のどちら側へ寄せるか。
+    public func shift(at runId: Int) -> STRubyPosition? {
+        guard runId >= 0, runId < shifts.count else { return nil }
+        return shifts[runId]
+    }
+    
     // Tate chu yoko (EbookViewer)
     /// 数字でなくても縦中横にする run の添字 (青空文庫の「縦組み中で横に並んだ文字」)。
     public var forcedTateChuYoko: Set<Int> = []

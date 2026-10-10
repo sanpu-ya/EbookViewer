@@ -675,10 +675,41 @@ class STLayout {
         }
     }
     
+    /// 上付き・下付き (EbookViewer)。小さくした文字を、ふつうの文字との差の半分だけ
+    /// 上付きの側 (縦書きなら行の右、横書きなら上) へ動かす。
+    ///
+    /// 縦書きでは小さな文字を 1 文字ぶんの枠の中央にそろえているので、これでちょうど
+    /// 枠の端に寄る。横書きではベースラインにそろえているので、ベースラインが上下する
+    /// (CSS の vertical-align: super / sub と同じ)。字送りは変わらないので、
+    /// 組み終わってから動かす。
+    private func applyShifts() {
+        guard !context.shifts.isEmpty else { return }
+        let full = context.adjustFontSize
+        for i in 0 ..< context.runs.count {
+            guard let side = context.shift(at: i) else { continue }
+            let run = context.runs[i]
+            guard !run.char.isNewline, run.fontSize < full else { continue }
+            let distance = (full - run.fontSize) * 0.5
+            
+            // 縦書きは行の右が上付きの側 (x が大きいほう)、横書きは上 (y が小さいほう)
+            var dx: CGFloat = 0
+            var dy: CGFloat = 0
+            switch context.direction {
+            case .tbRl: dx = side == .over ? distance : -distance
+            case .lrTb: dy = side == .over ? -distance : distance
+            }
+            
+            context.runs[i].position.x += dx
+            context.runs[i].position.y += dy
+            context.runs[i].frame = context.runs[i].frame.shift(dx: dx, dy: dy)
+        }
+    }
+    
     private func postLayoutLrTb() {
         // Post layout
         shiftPositionLrTb()
         alignTextLrTb()
+        applyShifts()
         updateRenderedSizeLrTb()
         updateVisibility()
     }
@@ -929,6 +960,7 @@ class STLayout {
         shiftPositionTbRl()
         applyTateChuYokoTbRl()
         alignTextTbRl()
+        applyShifts()
         updateRenderedSizeTbRl()
         updateVisibility()
     }

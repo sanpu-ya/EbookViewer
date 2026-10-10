@@ -309,6 +309,32 @@ struct PlainTextExtractorTests {
         #expect(r.sizes == [SizeAnnotation(range: 0..<3, scale: 2.0)])
     }
 
+    @Test func takesSuperscriptAndSubscriptFromClasses() {
+        let sup = extract("<p>H<span class=\"superscript\">2</span>O</p>")
+        #expect(sup.sizes == [SizeAnnotation(range: 1..<2, scale: 0.6)])
+        #expect(sup.shifts == [ShiftAnnotation(range: 1..<2, position: .over)])
+        let sub = extract("<p>H<span class=\"subscript\">2</span>O</p>")
+        #expect(sub.shifts == [ShiftAnnotation(range: 1..<2, position: .under)])
+        // 縦組みの行右小書き・行左小書きも同じ扱い
+        #expect(extract("<p>あ<span class=\"upr\">ん</span></p>").shifts
+            == [ShiftAnnotation(range: 1..<2, position: .over)])
+        #expect(extract("<p>あ<span class=\"swr\">ん</span></p>").shifts
+            == [ShiftAnnotation(range: 1..<2, position: .under)])
+    }
+
+    @Test func takesSuperscriptFromSupAndSubTags() {
+        let r = extract("<p>x<sup>2</sup>y<sub>1</sub></p>")
+        #expect(r.text == "x2y1")
+        #expect(r.shifts == [
+            ShiftAnnotation(range: 1..<2, position: .over),
+            ShiftAnnotation(range: 3..<4, position: .under),
+        ])
+        #expect(r.sizes == [
+            SizeAnnotation(range: 1..<2, scale: 0.6),
+            SizeAnnotation(range: 3..<4, scale: 0.6),
+        ])
+    }
+
     @Test func takesIndentFromAozoraClasses() {
         #expect(extract("<div class=\"jisage_3\">字下げ</div>").indents
             == [IndentAnnotation(range: 0..<3, head: 3)])
