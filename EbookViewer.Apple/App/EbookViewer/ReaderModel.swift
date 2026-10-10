@@ -36,7 +36,7 @@ protocol WebBridge: AnyObject {
 @MainActor
 protocol TextBridge: AnyObject {
     /// 本文を差し替え、初期位置のページを表示する。
-    func show(text: String, anchors: [String: Int], initial: InitialPosition)
+    func show(text: String, anchors: [String: Int], ruby: [RubyAnnotation], initial: InitialPosition)
     /// 本文を消す (読書位置は通知しない)。
     func clear()
     func next()

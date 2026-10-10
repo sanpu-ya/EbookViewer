@@ -21,9 +21,58 @@ struct PlainTextExtractorTests {
         #expect(extract(html).text == "本文")
     }
 
-    @Test func keepsRubyBaseAndDropsReading() {
+    @Test func keepsRubyBaseInTextAndTakesTheReadingOut() {
         let r = extract("<p><ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby>です</p>")
         #expect(r.text == "漢字です")
+        #expect(r.ruby == [RubyAnnotation(range: 0..<2, text: "かんじ")])
+    }
+
+    @Test func pairsEachBaseWithItsOwnReading() {
+        // <rb> で親文字が区切られている形
+        let r = extract("<p><ruby><rb>漢</rb><rt>かん</rt><rb>字</rb><rt>じ</rt></ruby>だ</p>")
+        #expect(r.text == "漢字だ")
+        #expect(r.ruby == [
+            RubyAnnotation(range: 0..<1, text: "かん"),
+            RubyAnnotation(range: 1..<2, text: "じ"),
+        ])
+    }
+
+    @Test func pairsReadingsWithoutRbTags() {
+        // <rb> を使わず <rt> で区切る形
+        let r = extract("<ruby>東<rt>とう</rt>京<rt>きょう</rt></ruby>")
+        #expect(r.text == "東京")
+        #expect(r.ruby == [
+            RubyAnnotation(range: 0..<1, text: "とう"),
+            RubyAnnotation(range: 1..<2, text: "きょう"),
+        ])
+    }
+
+    @Test func rubyPositionsFollowTheSurroundingText() {
+        let r = extract("<p>その<ruby>機械<rt>きかい</rt></ruby>は</p><p><ruby>私<rt>わたし</rt></ruby>の</p>")
+        #expect(r.text == "その機械は\n私の")
+        #expect(r.ruby == [
+            RubyAnnotation(range: 2..<4, text: "きかい"),
+            RubyAnnotation(range: 6..<7, text: "わたし"),
+        ])
+        // 親文字の範囲が本文のその位置と合っている
+        let base = Array(r.text)
+        #expect(String(base[2..<4]) == "機械")
+        #expect(String(base[6..<7]) == "私")
+    }
+
+    @Test func dropsSecondLevelRubyAndEmptyReadings() {
+        // <rtc> (ローマ字などの二段目) は親文字に重なるので落とす
+        let r = extract("<ruby>漢<rt>かん</rt><rtc>kan</rtc></ruby>")
+        #expect(r.text == "漢")
+        #expect(r.ruby == [RubyAnnotation(range: 0..<1, text: "かん")])
+        // 空のルビ、親文字の無いルビは捨てる
+        #expect(extract("<ruby>字<rt> </rt></ruby>").ruby.isEmpty)
+        #expect(extract("<ruby><rt>よみ</rt></ruby>").ruby.isEmpty)
+    }
+
+    @Test func decodesEntitiesInsideRubyReading() {
+        let r = extract("<ruby>…<rt>&#12390;&#12435;</rt></ruby>")
+        #expect(r.ruby == [RubyAnnotation(range: 0..<1, text: "てん")])
     }
 
     @Test func brMakesOneNewlineHeadingMakesBlankLine() {

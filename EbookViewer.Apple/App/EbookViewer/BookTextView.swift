@@ -69,9 +69,10 @@ final class TextViewCoordinator: TextBridge {
 
     // MARK: - TextBridge
 
-    func show(text: String, anchors: [String: Int], initial: InitialPosition) {
+    func show(text: String, anchors: [String: Int], ruby: [RubyAnnotation], initial: InitialPosition) {
         self.anchors = anchors
         label.text = text
+        label.rubyAnnotations = ruby.map { STRubyAnnotation(range: $0.range, text: $0.text) }
         pendingInitial = initial
         applyPendingInitial(needsLayout: true)
     }
@@ -82,6 +83,7 @@ final class TextViewCoordinator: TextBridge {
         currentPage = 0
         currentPages = 1
         label.text = nil
+        label.rubyAnnotations = []
         label.pageIndex = 0
     }
 

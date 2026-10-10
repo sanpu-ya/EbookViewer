@@ -18,6 +18,7 @@ AppKit でもビルドできるようにソースを取り込み、最小限の�
 | `Upstream/STContext.swift` `STObject.swift` `STFontManager.swift` `STTextSubstitutionGlyph.swift` `STLayout.swift` `STParser.swift` | upstream のまま (import 行のみ変更) |
 | `Upstream/STLabel.swift` | upstream に変更あり (下記) |
 | `STPlatform.swift` | EbookViewer で追加 (UIKit / AppKit の差を埋めるシム) |
+| `STRuby.swift` | EbookViewer で追加 (ルビ) |
 
 編集機能のクラス (`STTextView` 一式・`STText`・`STCursorView`・`STKnobView`・`STLensView`・`STTiledLayer`) は
 本文表示に使わないので取り込んでいません。
@@ -56,6 +57,7 @@ semantic color、`UIGraphicsGetCurrentContext()` を用意するので、これ�
 5. **同じ条件なら組み直さない**ようにしました。`layoutSubviews()` で組版結果を左右する条件
    (`LayoutSignature`) を比べ、変わっていなければ `STParser` / `STLayout` を呼び直しません。
    ページを送るたびに章全体を組み直さないためです。
+6. **ルビを足しました** (`rubyAnnotations` / `rubyFontScale` / `rubyExtent`)。詳細は下記。
 
 ## ページ分割のしくみ
 
@@ -74,3 +76,22 @@ semantic color、`UIGraphicsGetCurrentContext()` を用意するので、これ�
 組み直しが起きたりすることがありません。`STParser` は 1 文字 = 1 run で解析するので run の添字が
 そのまま文字位置になり、`page(ofCharacterAt:)` で「本文の n 文字目は何ページ目か」が分かります
 (目次のリンク先へのページ送りに使っています)。
+
+## ルビのしくみ
+
+`STLabel.rubyAnnotations` に「親文字の範囲 (text の Character 単位) とルビ」の組を渡すと、
+縦書きなら親文字の右、横書きなら上にルビを置きます (`STRuby.swift`)。
+
+- **行間に置く**ので、行分割・禁則処理・1 行の文字数には影響しません。そのかわり行送りが
+  親文字 + ルビぶんないと隣の行とぶつかります (`lineHeightScale` ≥ 1 + `rubyFontScale`、
+  既定の 1.9 と 0.5 なら余裕があります)。
+- **1 行目のルビが切れない**よう、ルビがあるときは本文全体をルビの幅だけずらし、
+  1 ページに入る行数 (`linesPerPage`) もその幅を引いて数えます (`rubyExtent`)。
+- **ルビ自体の組版は stone_engine に任せます**。親文字と同じフォント・同じ組方向で文字を
+  小さくしただけの `STContext` を作り、`STParser` / `STLayout` に 1 行として組ませてから、
+  親文字の中央にそろう位置へ平行移動しています。こうすると縦書き用グリフへの差し替えや
+  欧文の回転がそのまま効き、グリフまわりの処理を書き直さずに済みます。
+- **親文字が行をまたぐとき**は、親文字を行ごとに分け、ルビも親文字の文字数に比例して
+  分けて付けます。
+- ルビが親文字より長いときは、親文字の中央にそろえたうえで前後にはみ出します
+  (行の端からははみ出しません)。

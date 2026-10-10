@@ -52,10 +52,10 @@ PalmDOC 圧縮・HUFF/CDIC 圧縮の両方を展開できます。DRM 付きの�
 
 本文を組む「本文エンジン」を 2 つ持っていて、「表示」メニューで切り替えられます (⌘⇧E)。
 
-| エンジン | 組版 | 画像・ルビ・強調 | 既定 |
-|---|---|---|---|
-| stone_engine | [stone_engine](https://github.com/sanpu-ya/stone_engine) の `STLabel` (禁則処理・約物半角・縦中横・文字種ごとのフォント) | 表示しない (画像は `［画像］`、ルビは親文字だけ) | ○ |
-| WebView | WKWebView + CSS の多段組み | そのまま表示する | |
+| エンジン | 組版 | ルビ | 画像・強調 | 既定 |
+|---|---|---|---|---|
+| stone_engine | [stone_engine](https://github.com/sanpu-ya/stone_engine) の `STLabel` (禁則処理・約物半角・縦中横・文字種ごとのフォント) | 表示する | 表示しない (画像は `［画像］`) | ○ |
+| WebView | WKWebView + CSS の多段組み | 表示する | そのまま表示する | |
 
 組方向は「自動 → 縦書き → 横書き」の順で切り替えられます (どちらのエンジンでも同じ)。「自動」では、書籍側の宣言
 (`page-progression-direction="rtl"`、`primary-writing-mode`、CSS の `writing-mode: vertical-*`、
@@ -69,15 +69,19 @@ KF8 の EXTH 525/527) を優先し、宣言が無ければ日本語の本を縦�
 ページ分割を足しています (変更点は [同ディレクトリーの README](EbookViewer.Apple/EbookCore/Sources/StoneEngine/README.md))。
 
 `STLabel` は文字列しか受け取らないので、本文ドキュメントは `PlainTextExtractor` でプレーンテキストに変換します。
-ブロック要素の境目を改行にし (見出し・表・水平線の前後は空行)、`<ruby>` の親文字は残して `<rt>` のふりがなは落とし、
-`<img>` は `［画像］` (alt があればその文字列) に置き換えます。全角文字に挟まれた原文の改行は、CSS の
-segment break transformation rules と同じく空白にせず詰めます。`id` / `name` 属性の位置も覚えておき、
-目次のリンク先 (`#fragment`) から表示ページを求めるのに使います。
+ブロック要素の境目を改行にし (見出し・表・水平線の前後は空行)、`<img>` は `［画像］` (alt があればその文字列) に
+置き換えます。全角文字に挟まれた原文の改行は、CSS の segment break transformation rules と同じく空白にせず詰めます。
+`id` / `name` 属性の位置も覚えておき、目次のリンク先 (`#fragment`) から表示ページを求めるのに使います。
 
 ページ分割は、章全体を 1 回だけ組んでから行を block 方向 (縦書きなら右から左) に区切って行います。
 ページを送るときは描画位置をずらすだけなので、組み直しは起きません。
 
-画像・ルビ・強調をそのまま見たいときは「表示」メニューで WebView に切り替えてください。
+ルビ (`<ruby>` / `<rt>`) は親文字の位置とともに取り出し、`STLabel` に渡して縦書きなら親文字の右、
+横書きなら上の行間に組みます。親文字が行をまたぐときはルビも分けて付けます
+(しくみは [StoneEngine の README](EbookViewer.Apple/EbookCore/Sources/StoneEngine/README.md))。
+ルビの二段目 (`<rtc>` のローマ字など) は落とします。
+
+画像や強調をそのまま見たいときは「表示」メニューで WebView に切り替えてください。
 
 ### WebView
 
@@ -181,7 +185,7 @@ EbookViewer.Apple/
       Mobi/                  PalmDB, MOBI ヘッダー/EXTH, INDX, PalmDOC/HUFF-CDIC 展開, KF7/KF8 ビルダー
       Rendering/             ContentPreparer (CSS/JS 注入)、PlainTextExtractor (プレーンテキスト化) と Resources/viewer.css, viewer.js
       Support/               XML 簡易 DOM (XMLNode)、zlib、SHA-1、CP1252、HTML 実体、正規表現ヘルパー
-    Sources/StoneEngine/     stone_engine (STLabel) の取り込み + AppKit シム + ページ分割
+    Sources/StoneEngine/     stone_engine (STLabel) の取り込み + AppKit シム + ページ分割 + ルビ
     Tests/EbookCoreTests/    XCTest / Swift Testing (サンプル書籍は青空文庫『機械』横光利一、『奇巌城』ルブラン/菊池寛訳 (図版 4 枚))
     Tests/StoneEngineTests/  STLabel のページ分割と描画 (AppKit 移植の確認)
 design/icons/                アプリアイコンの SVG 原稿 (採用: 01_open-book.svg)
@@ -195,8 +199,10 @@ ZIP は自前の `ZipArchive` と zlib で読みます (Linux では zlib を直
 - EPUB (calibre 製横組み / AozoraConv 製縦書き / EPUB3 縦書き・複数ファイル・挿絵入り) のメタデータ、spine、目次、画像参照の解決
 - ハイブリッド MOBI の KF8 部と旧形式 (KF7) 部の両方、および単独 AZW3 の本文再構成、目次ラベル (CNCX)、`kindle:embed` / `recindex` 画像参照、表紙
 - ビューアー資産の注入 (script の除去、文字コード、XHTML 判定)
-- プレーンテキスト化 (ブロック要素の改行、ルビ、画像、文字参照、CRLF、全角文字に挟まれた改行、アンカー位置)
+- プレーンテキスト化 (ブロック要素の改行、画像、文字参照、CRLF、全角文字に挟まれた改行、アンカー位置)
+- ルビの取り出し (親文字との対応、`<rb>` で区切られた形、`<rp>` / `<rtc>` の除去、本文中の位置)
 - STLabel のページ分割 (縦書き / 横書きの 1 ページの行数、総ページ数、文字位置からのページ算出) と、実際にグリフが描かれること
+- STLabel のルビ (縦書きなら親文字の右・横書きなら上に付くこと、中央そろえ、行またぎの分割、行からはみ出さないこと、ページ追従)
 - CBZ / フォルダーの画像列挙と自然順ソート、ComicInfo.xml の解釈
 - ローカライズ文字列 (英語 / 日本語) の対応
 
@@ -208,8 +214,10 @@ ZIP は自前の `ZipArchive` と zlib で読みます (Linux では zlib を直
 本文を表示する WebKit のプロセスが繰り返し終了する場合は、macOS 版の App Sandbox に
 `com.apple.security.network.client` の権限があるか Xcode の Signing & Capabilities で確認してください。
 
-本文に画像・ルビ・強調が出ない場合は、本文エンジンが stone_engine になっています。
+本文に画像や強調が出ない場合は、本文エンジンが stone_engine になっています。
 「表示」メニュー (⌘⇧E) で WebView に切り替えてください。
+
+ルビが隣の行と重なる場合は、行間が狭すぎます。「表示」メニューの「行間」を「標準」以上にしてください。
 
 ## 利用しているソフトウェア
 

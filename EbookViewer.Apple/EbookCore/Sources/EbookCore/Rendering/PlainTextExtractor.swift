@@ -1,5 +1,18 @@
 import Foundation
 
+/// 親文字の範囲とそれに振るルビ (振り仮名)。
+public struct RubyAnnotation: Equatable, Sendable {
+    /// 親文字の範囲 (`ExtractedText.text` の Character 単位、0 始まり)。
+    public let range: Range<Int>
+    /// ルビ。
+    public let text: String
+
+    public init(range: Range<Int>, text: String) {
+        self.range = range
+        self.text = text
+    }
+}
+
 /// 本文ドキュメントから取り出したプレーンテキスト。
 public struct ExtractedText: Sendable {
     /// 本文。段落の区切りは改行 1 つ、見出しなどの前後は空行になる。
@@ -7,10 +20,13 @@ public struct ExtractedText: Sendable {
     /// `id` / `name` 属性 → `text` の中の文字位置 (Character 単位、0 始まり)。
     /// 目次のリンク先 (`#fragment`) から表示位置を求めるのに使う。
     public let anchors: [String: Int]
+    /// `<ruby>` から取り出したルビ。本文に出てくる順に並ぶ。
+    public let ruby: [RubyAnnotation]
 
-    public init(text: String, anchors: [String: Int]) {
+    public init(text: String, anchors: [String: Int], ruby: [RubyAnnotation] = []) {
         self.text = text
         self.anchors = anchors
+        self.ruby = ruby
     }
 }
 
@@ -20,7 +36,8 @@ public struct ExtractedText: Sendable {
 /// ここでは次のように割り切っている。
 ///
 /// - ブロック要素の境目を改行にする (見出し・表・水平線の前後は空行)
-/// - `<ruby>` の親文字は残し、`<rt>` / `<rp>` のふりがなは落とす
+/// - `<ruby>` の親文字は本文に残し、`<rt>` のふりがなは親文字の位置とともに `ruby` に取り出す
+///   (`<rp>` の括弧と、ローマ字などの二段目 `<rtc>` は落とす)
 /// - `<img>` は `[画像]` (alt があればその文字列) に置き換える
 /// - `<script>` / `<style>` / `<head>` の中身は捨てる
 ///
@@ -44,8 +61,8 @@ public enum PlainTextExtractor {
         "h1", "h2", "h3", "h4", "h5", "h6", "hr", "table",
     ]
 
-    /// 中身を捨てる要素。
-    private static let droppedTags: Set<String> = ["head", "script", "style", "rt", "rp", "title"]
+    /// 中身を捨てる要素。`<rtc>` はルビの二段目 (ローマ字など) で、親文字に重なるので捨てる。
+    private static let droppedTags: Set<String> = ["head", "script", "style", "rp", "rtc", "title"]
 
     /// 空白をそのまま残す要素。
     private static let preformattedTags: Set<String> = ["pre"]
@@ -207,6 +224,22 @@ public enum PlainTextExtractor {
             }
         }
 
+        // ルビ
+        switch tag.name {
+        case "ruby":
+            tag.isClose ? builder.endRuby() : builder.beginRuby()
+            return
+        case "rb":
+            // 親文字がいくつかに区切られている形 (<rb>漢</rb><rt>かん</rt><rb>字</rb><rt>じ</rt>)
+            if !tag.isClose { builder.beginRubyBase() }
+            return
+        case "rt":
+            tag.isClose ? builder.endRubyText() : builder.beginRubyText()
+            return
+        default:
+            break
+        }
+
         // 画像
         if tag.name == "img" || tag.name == "image" {
             guard !tag.isClose else { return }
@@ -335,6 +368,13 @@ public enum PlainTextExtractor {
         private var droppingTag: String?
         private var droppingDepth = 0
         private var preformattedDepth = 0
+        /// <ruby> の入れ子の深さ。
+        private var rubyDepth = 0
+        /// いま組み立てているルビの親文字の範囲。
+        private var rubyBase: Range<Int>?
+        /// <rt> の中なら、そこまでに読み取ったルビ。
+        private var rubyText: String?
+        private var ruby: [RubyAnnotation] = []
 
         var isDropping: Bool { droppingTag != nil }
 
@@ -356,6 +396,41 @@ public enum PlainTextExtractor {
         mutating func beginPreformatted() { preformattedDepth += 1 }
         mutating func endPreformatted() { preformattedDepth = max(0, preformattedDepth - 1) }
 
+        // MARK: ルビ
+
+        mutating func beginRuby() {
+            rubyDepth += 1
+            rubyBase = nil
+        }
+
+        mutating func endRuby() {
+            guard rubyDepth > 0 else { return }
+            rubyDepth -= 1
+            if rubyDepth == 0 {
+                rubyBase = nil
+                rubyText = nil
+            }
+        }
+
+        /// 次の親文字から新しいまとまりを始める。
+        mutating func beginRubyBase() {
+            rubyBase = nil
+        }
+
+        mutating func beginRubyText() {
+            guard rubyDepth > 0 else { return }
+            rubyText = ""
+        }
+
+        mutating func endRubyText() {
+            defer { rubyText = nil }
+            guard let reading = rubyText?.trimmingCharacters(in: Self.trimmed), !reading.isEmpty else { return }
+            guard let base = rubyBase, !base.isEmpty else { return }
+            ruby.append(RubyAnnotation(range: base, text: reading))
+            // 次の <rt> は、ここから後ろの親文字に付く
+            rubyBase = nil
+        }
+
         mutating func addAnchor(_ id: String) {
             // まだ文字が出ていないので、次に出る文字の位置を割り当てる
             if anchors[id] == nil { pendingAnchors.append(id) }
@@ -372,6 +447,15 @@ public enum PlainTextExtractor {
 
         mutating func append(_ c: Character) {
             guard !isDropping else { return }
+            // <rt> の中は本文ではなくルビとして取り込む
+            if rubyText != nil {
+                if Self.isCollapsible(c) {
+                    if rubyText?.isEmpty == false { rubyText?.append(" ") }
+                } else {
+                    rubyText?.append(c)
+                }
+                return
+            }
             if Self.isCollapsible(c), preformattedDepth == 0 {
                 // 行頭・文書先頭の空白は捨て、それ以外は 1 つに畳む
                 if count > 0, pendingNewlines == 0 {
@@ -412,6 +496,14 @@ public enum PlainTextExtractor {
         /// 文字を 1 つ出す。アンカーの位置はブロックの改行ではなく中身の先頭に付けたいので、
         /// アンカーの割り当ては append(_:) 側で行う。
         private mutating func emit(_ c: Character) {
+            // <ruby> の中なら、この文字を親文字の範囲に加える
+            if rubyDepth > 0, !c.isNewline {
+                if let base = rubyBase {
+                    rubyBase = base.lowerBound..<(count + 1)
+                } else {
+                    rubyBase = count..<(count + 1)
+                }
+            }
             out.append(c)
             count += 1
             lastCharacter = c
@@ -464,7 +556,14 @@ public enum PlainTextExtractor {
             for id in pendingAnchors where adjusted[id] == nil {
                 adjusted[id] = max(0, length - 1)
             }
-            return ExtractedText(text: text, anchors: adjusted)
+            // ルビの親文字の位置も、先頭を削ったぶんだけ詰める
+            let shifted = ruby.compactMap { annotation -> RubyAnnotation? in
+                let lower = min(max(0, annotation.range.lowerBound - leading), length)
+                let upper = min(max(0, annotation.range.upperBound - leading), length)
+                guard lower < upper else { return nil }
+                return RubyAnnotation(range: lower..<upper, text: annotation.text)
+            }
+            return ExtractedText(text: text, anchors: adjusted, ruby: shifted)
         }
     }
 }

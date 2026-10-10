@@ -181,6 +181,36 @@ open class STLabel: STPlatformView {
     }
 
     //--------------------------------------------------------------//
+    // MARK: - Ruby (EbookViewer)
+    //--------------------------------------------------------------//
+
+    /// ルビ (振り仮名)。親文字の範囲は text の Character 単位で指定する。
+    /// 縦書きなら親文字の右、横書きなら上の行間に置くので、行送り (lineHeightScale) が
+    /// 1 + rubyFontScale 以上ないと隣の行とぶつかる。
+    open var rubyAnnotations: [STRubyAnnotation] = [] {
+        didSet {
+            guard rubyAnnotations != oldValue else { return }
+            setNeedsLayout()
+        }
+    }
+
+    /// ルビの大きさ (親文字に対する比)。
+    open var rubyFontScale: CGFloat = 0.5 {
+        didSet {
+            guard rubyFontScale != oldValue else { return }
+            setNeedsLayout()
+        }
+    }
+
+    /// 行の脇にルビのために空けておく幅。ルビが無ければ 0。
+    open var rubyExtent: CGFloat {
+        rubyAnnotations.isEmpty ? 0 : context.adjustFontSize * rubyFontScale
+    }
+
+    /// 組み終わったルビ。親文字のレイアウトのあとに作る。
+    private(set) var rubyRuns: [STRubyRun] = []
+
+    //--------------------------------------------------------------//
     // MARK: - Page (EbookViewer)
     //--------------------------------------------------------------//
 
@@ -208,7 +238,8 @@ open class STLabel: STPlatformView {
     /// 行送りではなく文字 1 つぶんの幅なので、`文字幅 + 行送り × (行数 - 1) <= 表示領域` で求める。
     /// 単純に「表示領域 ÷ 行送り」にすると、行間のぶんだけ最後の 1 行が入らなくなる。
     open var linesPerPage: Int {
-        let extent = context.direction == .tbRl ? bounds.width : bounds.height
+        // ルビのぶんは行の脇に空けておく
+        let extent = (context.direction == .tbRl ? bounds.width : bounds.height) - rubyExtent
         let lineHeight = context.adjustLineHeight
         let glyphExtent = context.adjustFontSize
         guard lineHeight > 0, extent >= glyphExtent else { return 1 }
@@ -248,15 +279,19 @@ open class STLabel: STPlatformView {
         return start ..< start + perPage
     }
 
-    /// 表示中のページを bounds に収めるための描画位置のずれ。
-    private var pageTranslation: CGPoint {
+    /// 表示中のページを bounds に収め、ルビのぶんを空けるための描画位置のずれ。
+    private var contentTranslation: CGPoint {
+        // ページのぶん。縦書きは行が左へ積まれるので右へ、横書きは下へ積まれるので上へ戻す
+        var distance: CGFloat = 0
         let page = clampedPageIndex
-        guard isPaged, page > 0 else { return .zero }
-        let distance = context.adjustLineHeight * CGFloat(page * linesPerPage)
-        // 縦書きは行が左へ積まれるので右へ、横書きは下へ積まれるので上へ戻す
+        if isPaged, page > 0 {
+            distance = context.adjustLineHeight * CGFloat(page * linesPerPage)
+        }
+        // ルビのぶん。1 行目のルビ (縦書きなら右端、横書きなら上端の外側) が切れないよう本文をずらす
+        let ruby = rubyExtent
         switch context.direction {
-        case .tbRl: return .init(x: distance, y: 0)
-        case .lrTb: return .init(x: 0, y: -distance)
+        case .tbRl: return .init(x: distance - ruby, y: 0)
+        case .lrTb: return .init(x: 0, y: ruby - distance)
         }
     }
 
@@ -345,6 +380,8 @@ open class STLabel: STPlatformView {
         var isKinsokuAvailable: Bool
         var isDividedByWords: Bool
         var fonts: String
+        var rubyFontScale: CGFloat
+        var rubyAnnotations: [STRubyAnnotation]
     }
 
     private var layoutSignature: LayoutSignature?
@@ -368,7 +405,9 @@ open class STLabel: STPlatformView {
             punctuationMode: punctuationMode,
             isKinsokuAvailable: isKinsokuAvailable,
             isDividedByWords: isDividedByWords,
-            fonts: fonts)
+            fonts: fonts,
+            rubyFontScale: rubyFontScale,
+            rubyAnnotations: rubyAnnotations)
     }
 
     open override func sizeThatFits(_ size: CGSize) -> CGSize {
@@ -408,6 +447,8 @@ open class STLabel: STPlatformView {
         let signature = makeLayoutSignature()
         if signature != layoutSignature {
             parseAndLayout()
+            // ルビは親文字のレイアウトが決まってから、その脇に置く
+            rubyRuns = STRubyLayout.runs(context: context, annotations: rubyAnnotations, fontScale: rubyFontScale)
             layoutSignature = signature
         }
 
@@ -441,6 +482,8 @@ open class STLabel: STPlatformView {
         let fontId: Int
         let isClockwise: Bool
         let needsToFlip: Bool
+        /// 親文字ではなくルビ (文字の大きさが違うので別のまとまりにする)。
+        let isRuby: Bool
         let ctFont: CTFont
         var glyphs: [CGGlyph]
         var positions: [CGPoint]
@@ -449,10 +492,31 @@ open class STLabel: STPlatformView {
 
     var drawBuckets = [DrawBucket]()
 
+    /// 同じフォント・同じ向きのグリフをまとめて描けるように、まとまりを探して (無ければ作って) 返す。
+    private func bucketIndex(
+        in drawBuckets: inout [DrawBucket],
+        fontId: Int,
+        isClockwise: Bool,
+        needsToFlip: Bool,
+        isRuby: Bool
+    ) -> Int {
+        if let index = drawBuckets.firstIndex(where: {
+            $0.fontId == fontId && $0.isClockwise == isClockwise && $0.needsToFlip == needsToFlip && $0.isRuby == isRuby
+        }) {
+            return index
+        }
+        let size = isRuby ? context.adjustFontSize * rubyFontScale : context.adjustFontSize
+        let ctFont = context.fontManager.ctFont(fontId: fontId, size: size, isClockwise: isClockwise)
+        drawBuckets.append(DrawBucket(
+            fontId: fontId, isClockwise: isClockwise, needsToFlip: needsToFlip, isRuby: isRuby,
+            ctFont: ctFont, glyphs: [], positions: [], frames: []))
+        return drawBuckets.count - 1
+    }
+
     private func createDrawBcukets() {
         // Decide page
         let lineRange: Range<Int>? = isPaged ? pageLineRange : nil
-        let translation = pageTranslation
+        let translation = contentTranslation
 
         // Create draw buckets
         var drawBuckets = [DrawBucket]()
@@ -469,18 +533,8 @@ open class STLabel: STPlatformView {
             let needsToFlip = context.fontManager.needsToFlip(fontId: run.fontId)
 
             // Find bucket
-            let bucketIndex: Int
-            if let index = drawBuckets.firstIndex(where: { $0.fontId == run.fontId && $0.isClockwise == isClockwise && $0.needsToFlip == needsToFlip }) {
-                bucketIndex = index
-            }
-            else {
-                // Get CT font
-                let ctFont = context.fontManager.ctFont(fontId: run.fontId, size: context.adjustFontSize, isClockwise: isClockwise)
-
-                // Add bucket
-                drawBuckets.append(DrawBucket(fontId: run.fontId, isClockwise: isClockwise, needsToFlip: needsToFlip, ctFont: ctFont, glyphs: [], positions: [], frames: []))
-                bucketIndex = drawBuckets.count - 1
-            }
+            let bucketIndex = bucketIndex(
+                in: &drawBuckets, fontId: run.fontId, isClockwise: isClockwise, needsToFlip: needsToFlip, isRuby: false)
 
             // Decide position and frame
             let position = CGPoint(x: run.position.x + translation.x, y: run.position.y + translation.y)
@@ -500,6 +554,18 @@ open class STLabel: STPlatformView {
                 drawBuckets[bucketIndex].positions.append(position)
                 drawBuckets[bucketIndex].frames.append(frame)
             }
+        }
+
+        // Add ruby (EbookViewer)
+        for run in rubyRuns {
+            if let lineRange {
+                guard lineRange.contains(run.line) else { continue }
+            }
+            let index = bucketIndex(
+                in: &drawBuckets, fontId: run.fontId, isClockwise: run.isClockwise, needsToFlip: run.needsToFlip, isRuby: true)
+            drawBuckets[index].glyphs.append(run.glyph)
+            drawBuckets[index].positions.append(CGPoint(x: run.position.x + translation.x, y: run.position.y + translation.y))
+            drawBuckets[index].frames.append(run.frame.offsetBy(dx: translation.x, dy: translation.y))
         }
 
         // Set draw buckets
