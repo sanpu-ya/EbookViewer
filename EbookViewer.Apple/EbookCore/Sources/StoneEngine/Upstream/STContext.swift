@@ -74,6 +74,24 @@ open class STContext {
         runId >= 0 && runId < styles.count ? styles[runId] : []
     }
     
+    // Tate chu yoko (EbookViewer)
+    /// 数字でなくても縦中横にする run の添字 (青空文庫の「縦組み中で横に並んだ文字」)。
+    public var forcedTateChuYoko: Set<Int> = []
+    
+    /// 縦中横にしてよい長さ (1 文字ぶんに対する比)。stone_engine は字を詰めないので、
+    /// これを超える長さのまとまりは横に並べると隣の行にはみ出してしまう。
+    static let tateChuYokoLimit: CGFloat = 1.5
+    
+    /// run が、指定された縦中横のまとまりに入っているか。
+    /// 1 文字ぶんに収まらないほど長いまとまりは、横に並べずそのままにする。
+    func isForcedTateChuYoko(run: STRun) -> Bool {
+        guard !forcedTateChuYoko.isEmpty, run.tokenId < tokens.count else { return false }
+        let range = tokens[run.tokenId].runIdRange
+        guard range.allSatisfy({ forcedTateChuYoko.contains($0) }) else { return false }
+        let total = range.reduce(CGFloat.zero) { $0 + runs[$1].advance.width }
+        return total <= adjustFontSize * Self.tateChuYokoLimit
+    }
+    
     //--------------------------------------------------------------//
     // MARK: - Advance
     //--------------------------------------------------------------//
@@ -501,11 +519,14 @@ open class STContext {
         // Check flag
         guard isAllowedTateChuYoko else { return false }
         
-        // Check script
-        guard !fontManager.script(fontId: run.fontId).notNeedsToClockwiseInTbRl else { return false }
-        
         // Check direction
         guard direction == .tbRl else { return false }
+        
+        // 指定された範囲は、数字でなくても縦中横にする (EbookViewer)
+        if isForcedTateChuYoko(run: run) { return true }
+        
+        // Check script
+        guard !fontManager.script(fontId: run.fontId).notNeedsToClockwiseInTbRl else { return false }
         
         // For number token
         if tokens[run.tokenId].runIdRange.map({ runs[$0] }).first(where: { !$0.char.isNumber }) == nil {

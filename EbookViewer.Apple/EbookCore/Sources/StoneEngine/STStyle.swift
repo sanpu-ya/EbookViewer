@@ -25,12 +25,6 @@ public struct STTextStyle: OptionSet, Sendable, Hashable {
     public static let bold = STTextStyle(rawValue: 1 << 0)
     /// 斜体。日本語フォントには斜体が無いことが多く、その場合は正体のままになる。
     public static let italic = STTextStyle(rawValue: 1 << 1)
-    /// 下線 (縦書きでは文字の右に引く傍線)。
-    public static let underline = STTextStyle(rawValue: 1 << 2)
-
-    /// フォントを差し替える必要がある指定だけを取り出したもの。
-    /// 下線は字面を変えないので、同じフォントのまとまりとして描ける。
-    var fontTraits: STTextStyle { intersection([.bold, .italic]) }
 }
 
 /// 範囲と、そこにかける字面の変化。
@@ -51,6 +45,8 @@ public struct STEmphasisAnnotation: Equatable, Sendable {
     public var range: Range<Int>
     /// 打つ印。既定は「ゴマ点」。
     public var mark: String
+    /// 親文字のどちら側に打つか。青空文庫の「左に傍点」は `.under`。
+    public var position: STRubyPosition
 
     /// ゴマ点 (CSS の text-emphasis-style: filled sesame)。
     public static let sesame = "\u{FE45}"
@@ -61,9 +57,14 @@ public struct STEmphasisAnnotation: Equatable, Sendable {
     /// 白丸。
     public static let openDot = "\u{25CB}"
 
-    public init(range: Range<Int>, mark: String = STEmphasisAnnotation.sesame) {
+    public init(
+        range: Range<Int>,
+        mark: String = STEmphasisAnnotation.sesame,
+        position: STRubyPosition = .over
+    ) {
         self.range = range
         self.mark = mark
+        self.position = position
     }
 
     /// 圏点を 1 文字ずつの注記にする。
@@ -72,11 +73,11 @@ public struct STEmphasisAnnotation: Equatable, Sendable {
     /// CSS の text-emphasis と同じく反対側へ逃がす。
     func marks(avoiding ruby: [STRubyAnnotation]) -> [STRubyAnnotation] {
         range.map { index in
-            let hasRubyOver = ruby.contains {
-                $0.position == .over && !$0.text.isEmpty && $0.range.contains(index)
+            let isTaken = ruby.contains {
+                $0.position == position && !$0.text.isEmpty && $0.range.contains(index)
             }
-            return STRubyAnnotation(
-                range: index..<(index + 1), text: mark, position: hasRubyOver ? .under : .over)
+            let side: STRubyPosition = isTaken ? (position == .over ? .under : .over) : position
+            return STRubyAnnotation(range: index..<(index + 1), text: mark, position: side)
         }
     }
 }

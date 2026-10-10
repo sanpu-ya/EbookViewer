@@ -14,6 +14,8 @@ struct StyleTests {
     private func makeLabel(
         _ text: String,
         styles: [STStyleAnnotation] = [],
+        lines: [STLineAnnotation] = [],
+        tateChuYoko: [Range<Int>] = [],
         emphasis: [STEmphasisAnnotation] = [],
         ruby: [STRubyAnnotation] = [],
         size: CGSize = CGSize(width: 400, height: 600),
@@ -29,6 +31,8 @@ struct StyleTests {
         label.setFontNames(["HelveticaNeue"], script: .latin)
         label.text = text
         label.styleAnnotations = styles
+        label.lineAnnotations = lines
+        label.tateChuYokoRanges = tateChuYoko
         label.emphasisAnnotations = emphasis
         label.rubyAnnotations = ruby
         label.layoutSubviews()
@@ -94,24 +98,24 @@ struct StyleTests {
 
     @Test func underlineDoesNotChangeTheFace() {
         // 下線は字面を変えないので、同じフォントのまとまりのまま
-        let label = makeLabel("下線つき", styles: [STStyleAnnotation(range: 0..<2, style: .underline)])
+        let label = makeLabel("下線つき", lines: [STLineAnnotation(range: 0..<2)])
         #expect(fontNames(label) == ["HiraMinProN-W3"])
-        #expect(label.context.runs[0].style == .underline)
+        #expect(label.lineAnnotations.count == 1)
     }
 
     @Test func underlineIsDrawnBesideTheCharactersInVerticalWriting() {
         let size = CGSize(width: 200, height: 200)
         let plain = render(makeLabel("下線つき", size: size), size: size)
         let underlined = render(
-            makeLabel("下線つき", styles: [STStyleAnnotation(range: 0..<2, style: .underline)], size: size),
+            makeLabel("下線つき", lines: [STLineAnnotation(range: 0..<2)], size: size),
             size: size)
         // 線のぶんだけ墨が増える
         #expect(underlined.lazy.filter { $0 > 0 }.count > plain.lazy.filter { $0 > 0 }.count)
 
         // 縦書きでは文字の右側に、親文字 2 文字ぶんの長さで引かれる
-        let label = makeLabel("下線つき", styles: [STStyleAnnotation(range: 0..<2, style: .underline)], size: size)
+        let label = makeLabel("下線つき", lines: [STLineAnnotation(range: 0..<2)], size: size)
         let base = label.context.runs[0..<2]
-        let column = Int(base.map(\.frame.maxX).max()! - label.rubyExtent + label.underlineThickness)
+        let column = Int(base.map(\.frame.maxX).max()! - label.rubyExtent + label.lineThickness)
         var rows: [Int] = []
         let width = Int(size.width)
         for y in 0..<Int(size.height) where underlined[(y * width + column) * 4 + 3] > 0 {
@@ -124,13 +128,13 @@ struct StyleTests {
     @Test func underlineIsDrawnBelowTheCharactersInHorizontalWriting() {
         let size = CGSize(width: 200, height: 200)
         let label = makeLabel(
-            "下線つき", styles: [STStyleAnnotation(range: 0..<2, style: .underline)],
+            "下線つき", lines: [STLineAnnotation(range: 0..<2)],
             size: size, direction: .lrTb)
         let pixels = render(label, size: size)
         let width = Int(size.width)
         let base = label.context.runs[0..<2]
         // 親文字のすぐ下の行に、親文字の幅ぶんの線がある
-        let row = Int(base.map(\.frame.maxY).max()! + label.underlineThickness * 1.5)
+        let row = Int(base.map(\.frame.maxY).max()! + label.lineThickness * 1.5)
         let inked = (0..<width).filter { pixels[(row * width + $0) * 4 + 3] > 0 }
         #expect(!inked.isEmpty)
         #expect(abs(Double(inked.first!) - base.map(\.frame.minX).min()!) < 2)
@@ -139,13 +143,13 @@ struct StyleTests {
 
     @Test func underlineReservesSpaceSoItIsNotClipped() {
         let plain = makeLabel("下線")
-        let underlined = makeLabel("下線", styles: [STStyleAnnotation(range: 0..<2, style: .underline)])
+        let underlined = makeLabel("下線", lines: [STLineAnnotation(range: 0..<2)])
         #expect(plain.rubyExtent == 0)
         #expect(underlined.rubyExtent > 0)
         // ルビがあるときは、ルビのぶんの空きで足りるので増えない
         let withRuby = makeLabel(
             "下線",
-            styles: [STStyleAnnotation(range: 0..<2, style: .underline)],
+            lines: [STLineAnnotation(range: 0..<2)],
             ruby: [STRubyAnnotation(range: 0..<2, text: "かせん")])
         #expect(abs(withRuby.rubyExtent - 10) < 0.01)
     }
@@ -153,7 +157,7 @@ struct StyleTests {
     @Test func underlineIsBrokenPerLine() {
         // 1 行 3 文字の幅で 6 文字に下線を引くと、行ごとに分かれる
         let label = makeLabel(
-            "あいうえおか", styles: [STStyleAnnotation(range: 0..<6, style: .underline)],
+            "あいうえおか", lines: [STLineAnnotation(range: 0..<6)],
             size: CGSize(width: 200, height: 60))
         #expect(Set(label.context.runs.map(\.line)).count == 2)
         // 行をまたいでも、描かれる線は行ごとに収まっている (高さが 1 行ぶんを超えない)
@@ -165,6 +169,98 @@ struct StyleTests {
             if (0..<width).contains(where: { pixels[(y * width + $0) * 4 + 3] > 0 }) { inkRows += 1 }
         }
         #expect(inkRows <= Int(size.height))
+    }
+
+    @Test func lineStylesAllDrawSomething() {
+        // 二重線・点線・破線・波線が、実線と違う見た目で引かれる
+        let size = CGSize(width: 200, height: 200)
+        var inks: [STLineStyle: Int] = [:]
+        for style in STLineStyle.allCases {
+            let label = makeLabel(
+                "下線つき", lines: [STLineAnnotation(range: 0..<4, style: style)], size: size)
+            inks[style] = render(label, size: size).lazy.filter { $0 > 0 }.count
+        }
+        let plain = render(makeLabel("下線つき", size: size), size: size).lazy.filter { $0 > 0 }.count
+        for style in STLineStyle.allCases {
+            #expect(inks[style]! > plain)
+        }
+        // 点線・破線は実線より墨が少なく、二重線は多い
+        #expect(inks[.dotted]! < inks[.solid]!)
+        #expect(inks[.dashed]! < inks[.solid]!)
+        #expect(inks[.double]! > inks[.solid]!)
+    }
+
+    @Test func overlineIsDrawnOnTheOppositeSide() {
+        let size = CGSize(width: 200, height: 200)
+        let label = makeLabel(
+            "下線つき", lines: [STLineAnnotation(range: 0..<2, style: .solid, position: .overline)], size: size)
+        let pixels = render(label, size: size)
+        let width = Int(size.width)
+        let base = label.context.runs[0..<2]
+        // 縦書きでは左傍線。親文字のすぐ左に墨があり、右には無い
+        let left = Int(base.map(\.frame.minX).min()!)
+        let right = Int(base.map(\.frame.maxX).max()!)
+        func hasInk(_ columns: Range<Int>) -> Bool {
+            columns.contains { column in
+                column >= 0 && column < width
+                    && (0..<Int(size.height)).contains { pixels[($0 * width + column) * 4 + 3] > 0 }
+            }
+        }
+        #expect(hasInk((left - 5)..<left))
+        #expect(!hasInk(right..<min(width, right + 5)))
+    }
+
+    @Test func strikethroughIsDrawnOverTheCharacters() {
+        let size = CGSize(width: 200, height: 200)
+        let label = makeLabel(
+            "消す", lines: [STLineAnnotation(range: 0..<2, style: .solid, position: .strikethrough)], size: size)
+        // 取り消し線は文字に重なるので、行の脇に空きは要らない
+        #expect(label.rubyExtent == 0)
+        let pixels = render(label, size: size)
+        #expect(pixels.lazy.filter { $0 > 0 }.count
+            > render(makeLabel("消す", size: size), size: size).lazy.filter { $0 > 0 }.count)
+    }
+
+    @Test func emphasisOnTheUnderSideStaysThere() {
+        // 青空文庫の「左に傍点」
+        let label = makeLabel("大事", emphasis: [STEmphasisAnnotation(range: 0..<2, position: .under)])
+        let base = label.context.runs[0..<2]
+        #expect(label.rubyRuns.allSatisfy { $0.frame.maxX <= base.map(\.frame.minX).min()! + 0.5 })
+    }
+
+    // MARK: - 縦中横
+
+    @Test func tateChuYokoPutsCharactersUprightSideBySide() {
+        // 欧文の 2 文字は、ふつうは 90 度回転して縦に並ぶ
+        let plain = makeLabel("昭和ab年")
+        #expect(plain.context.isClockwise(run: plain.context.runs[2]))
+        // 縦中横にすると回転せず、2 文字が同じ高さに並ぶ
+        let tcy = makeLabel("昭和ab年", tateChuYoko: [2..<4])
+        #expect(!tcy.context.isClockwise(run: tcy.context.runs[2]))
+        #expect(abs(tcy.context.runs[2].frame.minY - tcy.context.runs[3].frame.minY) < 0.5)
+        // 次の文字は 1 文字ぶんだけ先に来る
+        #expect(abs(tcy.context.runs[4].frame.minY - (tcy.context.runs[2].frame.minY + 20)) < 0.5)
+        // そのぶん行は短くなる
+        #expect(tcy.context.runs[4].frame.minY < plain.context.runs[4].frame.minY)
+    }
+
+    @Test func twoDigitNumbersAreAlreadyUprightWithoutTheAnnotation() {
+        // 2 桁の数字はエンジンが自動で縦中横にする (注記が無くても同じ)
+        let label = makeLabel("昭和30年")
+        #expect(label.context.isTateChuYoko(run: label.context.runs[2]))
+    }
+
+    @Test func tooLongTateChuYokoIsLeftAsItIs() {
+        // 1 文字ぶんに収まらない長さは、横に並べると隣の行にはみ出すのでそのままにする
+        let label = makeLabel("昭和1000年", tateChuYoko: [2..<6])
+        #expect(!label.context.isTateChuYoko(run: label.context.runs[2]))
+        #expect(label.context.isClockwise(run: label.context.runs[2]))
+    }
+
+    @Test func tateChuYokoDoesNothingInHorizontalWriting() {
+        let label = makeLabel(
+            "昭和30年", tateChuYoko: [2..<4], size: CGSize(width: 400, height: 300), direction: .lrTb)
+        #expect(!label.context.isTateChuYoko(run: label.context.runs[2]))
     }
 
     // MARK: - 圏点

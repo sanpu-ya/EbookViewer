@@ -81,14 +81,17 @@ final class TextViewCoordinator: TextBridge {
             STRubyAnnotation(range: $0.range, text: $0.text, position: $0.position == .under ? .under : .over)
         }
         label.emphasisAnnotations = content.emphasis.map {
-            STEmphasisAnnotation(range: $0.range, mark: $0.mark)
+            STEmphasisAnnotation(range: $0.range, mark: $0.mark, position: $0.position == .under ? .under : .over)
         }
         label.styleAnnotations = content.styles.map {
             var style: STTextStyle = []
             if $0.style.contains(.bold) { style.insert(.bold) }
             if $0.style.contains(.italic) { style.insert(.italic) }
-            if $0.style.contains(.underline) { style.insert(.underline) }
             return STStyleAnnotation(range: $0.range, style: style)
+        }
+        label.tateChuYokoRanges = content.tateChuYoko
+        label.lineAnnotations = content.lines.map {
+            STLineAnnotation(range: $0.range, style: Self.lineStyle($0.style), position: Self.linePosition($0.position))
         }
         pendingInitial = initial
         applyPendingInitial(needsLayout: true)
@@ -104,6 +107,8 @@ final class TextViewCoordinator: TextBridge {
         label.imageAnnotations = []
         label.emphasisAnnotations = []
         label.styleAnnotations = []
+        label.lineAnnotations = []
+        label.tateChuYokoRanges = []
         label.pageIndex = 0
     }
 
@@ -134,6 +139,24 @@ final class TextViewCoordinator: TextBridge {
 
     func focus() {
         requestFocus?()
+    }
+
+    private static func lineStyle(_ style: EbookCore.LineStyle) -> STLineStyle {
+        switch style {
+        case .solid: return .solid
+        case .double: return .double
+        case .dotted: return .dotted
+        case .dashed: return .dashed
+        case .wave: return .wave
+        }
+    }
+
+    private static func linePosition(_ position: EbookCore.LinePosition) -> STLinePosition {
+        switch position {
+        case .underline: return .underline
+        case .overline: return .overline
+        case .strikethrough: return .strikethrough
+        }
     }
 
     // MARK: - ページ

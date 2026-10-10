@@ -203,24 +203,85 @@ struct PlainTextExtractorTests {
     @Test func takesUnderlineFromUAndIns() {
         let r = extract("<p>ここに<u>下線</u>と<ins>追記</ins></p>")
         #expect(r.text == "ここに下線と追記")
-        #expect(r.styles == [
-            StyleAnnotation(range: 3..<5, style: .underline),
-            StyleAnnotation(range: 6..<8, style: .underline),
+        #expect(r.lines == [
+            LineAnnotation(range: 3..<5, style: .solid, position: .underline),
+            LineAnnotation(range: 6..<8, style: .solid, position: .underline),
         ])
-        #expect(r.emphasis.isEmpty)
+        #expect(r.styles.isEmpty)
     }
 
-    @Test func takesUnderlineFromClassNames() {
-        let r = extract("<p><span class=\"underline\">傍線</span></p>")
-        #expect(r.styles == [StyleAnnotation(range: 0..<2, style: .underline)])
+    @Test func takesStrikethroughFromSAndClass() {
+        #expect(extract("<p><s>消し</s></p>").lines
+            == [LineAnnotation(range: 0..<2, style: .solid, position: .strikethrough)])
+        #expect(extract("<p><span class=\"dbl_strike\">消し</span></p>").lines
+            == [LineAnnotation(range: 0..<2, style: .double, position: .strikethrough)])
+    }
+
+    @Test func takesAozoraLineStyles() {
+        // 青空文庫の注記から変換された傍線 (右) と左傍線
+        let cases: [(String, LineStyle, LinePosition)] = [
+            ("underline_solid", .solid, .underline),
+            ("underline_double", .double, .underline),
+            ("underline_dotted", .dotted, .underline),
+            ("underline_dashed", .dashed, .underline),
+            ("underline_wave", .wave, .underline),
+            ("overline_solid", .solid, .overline),
+            ("overline_wave", .wave, .overline),
+        ]
+        for (className, style, position) in cases {
+            let r = extract("<p><span class=\"\(className)\">線</span></p>")
+            #expect(r.lines == [LineAnnotation(range: 0..<1, style: style, position: position)])
+        }
+    }
+
+    @Test func takesAozoraEmphasisMarks() {
+        // 青空文庫の傍点の種類
+        let cases: [(String, String)] = [
+            ("sesame_dot", "\u{FE45}"),
+            ("white_sesame_dot", "\u{FE46}"),
+            ("black_circle", "\u{25CF}"),
+            ("white_circle", "\u{25CB}"),
+            ("black_up-pointing_triangle", "\u{25B2}"),
+            ("white_up-pointing_triangle", "\u{25B3}"),
+            ("bullseye", "\u{25CE}"),
+            ("fisheye", "\u{25C9}"),
+            ("saltire", "\u{00D7}"),
+        ]
+        for (className, mark) in cases {
+            let r = extract("<p><em class=\"\(className)\">点</em></p>")
+            #expect(r.emphasis == [EmphasisAnnotation(range: 0..<1, mark: mark, position: .over)])
+        }
+    }
+
+    @Test func emphasisAfterGoesOnTheOtherSide() {
+        // 「左に傍点」は _after が付く
+        let r = extract("<p><em class=\"sesame_dot_after\">点</em></p>")
+        #expect(r.emphasis == [EmphasisAnnotation(range: 0..<1, mark: "\u{FE45}", position: .under)])
+    }
+
+    @Test func takesBoldAndItalicFromAozoraClasses() {
+        #expect(extract("<p><span class=\"futoji\">太</span></p>").styles
+            == [StyleAnnotation(range: 0..<1, style: .bold)])
+        #expect(extract("<p><span class=\"shatai\">斜</span></p>").styles
+            == [StyleAnnotation(range: 0..<1, style: .italic)])
+    }
+
+    @Test func readsSeveralClassesOnOneElement() {
+        let r = extract("<p><span class=\"futoji underline_wave\">両方</span></p>")
+        #expect(r.styles == [StyleAnnotation(range: 0..<2, style: .bold)])
+        #expect(r.lines == [LineAnnotation(range: 0..<2, style: .wave, position: .underline)])
     }
 
     @Test func underlineCombinesWithBold() {
         let r = extract("<p><strong><u>太い下線</u></strong></p>")
-        #expect(r.styles == [
-            StyleAnnotation(range: 0..<4, style: .underline),
-            StyleAnnotation(range: 0..<4, style: .bold),
-        ])
+        #expect(r.lines == [LineAnnotation(range: 0..<4, style: .solid, position: .underline)])
+        #expect(r.styles == [StyleAnnotation(range: 0..<4, style: .bold)])
+    }
+
+    @Test func takesTateChuYokoFromClass() {
+        let r = extract("<p>昭和<span class=\"tcy\">30</span>年</p>")
+        #expect(r.text == "昭和30年")
+        #expect(r.tateChuYoko == [2..<4])
     }
 
     @Test func emphasisRangesFollowTheSurroundingText() {

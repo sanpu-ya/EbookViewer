@@ -219,6 +219,24 @@ open class STLabel: STPlatformView {
         }
     }
 
+    /// 縦中横にする範囲 (青空文庫の「縦組み中で横に並んだ文字」)。
+    /// 横書きでは何も起きない。まとまりが 1 語として切り出されないと横に並ばないので、
+    /// 数字や欧文の 2〜3 文字を想定している。
+    open var tateChuYokoRanges: [Range<Int>] = [] {
+        didSet {
+            guard tateChuYokoRanges != oldValue else { return }
+            setNeedsLayout()
+        }
+    }
+
+    /// 傍線・左傍線・取り消し線を引く範囲。
+    open var lineAnnotations: [STLineAnnotation] = [] {
+        didSet {
+            guard lineAnnotations != oldValue else { return }
+            setNeedsLayout()
+        }
+    }
+
     /// 太字・斜体にする範囲。
     open var styleAnnotations: [STStyleAnnotation] = [] {
         didSet {
@@ -250,10 +268,10 @@ open class STLabel: STPlatformView {
         let ruby = annotations.contains { $0.position == position && !$0.text.isEmpty }
             ? context.adjustFontSize * rubyFontScale
             : 0
-        // 下線は縦書きなら文字の右 (over)、横書きなら下 (under) に引く
-        let underlineSide: STRubyPosition = context.direction == .tbRl ? .over : .under
-        guard position == underlineSide, hasUnderline else { return ruby }
-        return max(ruby, underlineExtent)
+        // 傍線のぶん。引く側は向きと種類で決まる
+        let needsLine = lineAnnotations.contains { $0.position.side(for: context.direction) == position }
+        guard needsLine else { return ruby }
+        return max(ruby, lineExtent)
     }
 
     /// 行の両脇にルビのために空けておく幅の合計。
@@ -261,18 +279,15 @@ open class STLabel: STPlatformView {
         STRubyPosition.allCases.reduce(0) { $0 + rubyExtent($1) }
     }
 
-    private var hasUnderline: Bool {
-        styleAnnotations.contains { $0.style.contains(.underline) }
-    }
-
-    /// 下線の太さ。
-    open var underlineThickness: CGFloat {
+    /// 傍線の太さ。
+    open var lineThickness: CGFloat {
         max(1, (context.adjustFontSize / 18).rounded())
     }
 
-    /// 下線のために文字の脇へ空けておく幅 (線の太さと、文字との間の空き)。
-    private var underlineExtent: CGFloat {
-        underlineThickness * 2
+    /// 傍線のために文字の脇へ空けておく幅 (線の太さと、文字との間の空き)。
+    /// 二重線と波線は太さより広がるので、そのぶんを見ておく。
+    private var lineExtent: CGFloat {
+        lineThickness * 4
     }
 
     /// 組み終わったルビ。親文字のレイアウトのあとに置き場所を決める。
@@ -483,6 +498,8 @@ open class STLabel: STPlatformView {
         context.styles = makeStyles()
         // 行の中に収める画像は、置き場所の 1 文字を画像の幅ぶんに広げる
         context.spacings = makeImageSpacings()
+        // 縦中横にする文字
+        context.forcedTateChuYoko = Set(tateChuYokoRanges.flatMap { $0 })
 
         // Refresh font manager
         context.fontManager.refresh()
@@ -566,6 +583,8 @@ open class STLabel: STPlatformView {
         var rubyAnnotations: [STRubyAnnotation]
         var emphasisAnnotations: [STEmphasisAnnotation]
         var styleAnnotations: [STStyleAnnotation]
+        var lineAnnotations: [STLineAnnotation]
+        var tateChuYokoRanges: [Range<Int>]
         var allowsRubyOverhang: Bool
         var images: [STImageAnnotation]
     }
@@ -596,6 +615,8 @@ open class STLabel: STPlatformView {
             rubyAnnotations: rubyAnnotations,
             emphasisAnnotations: emphasisAnnotations,
             styleAnnotations: styleAnnotations,
+            lineAnnotations: lineAnnotations,
+            tateChuYokoRanges: tateChuYokoRanges,
             allowsRubyOverhang: allowsRubyOverhang,
             images: imageAnnotations)
     }
@@ -696,7 +717,7 @@ open class STLabel: STPlatformView {
     ) -> Int {
         if let index = drawBuckets.firstIndex(where: {
             $0.fontId == fontId && $0.isClockwise == isClockwise && $0.needsToFlip == needsToFlip
-                && $0.isRuby == isRuby && $0.style == style.fontTraits
+                && $0.isRuby == isRuby && $0.style == style
         }) {
             return index
         }
@@ -704,7 +725,7 @@ open class STLabel: STPlatformView {
         let ctFont = context.fontManager.ctFont(fontId: fontId, size: size, isClockwise: isClockwise, style: style)
         drawBuckets.append(DrawBucket(
             fontId: fontId, isClockwise: isClockwise, needsToFlip: needsToFlip, isRuby: isRuby,
-            style: style.fontTraits, ctFont: ctFont, glyphs: [], positions: [], frames: []))
+            style: style, ctFont: ctFont, glyphs: [], positions: [], frames: []))
         return drawBuckets.count - 1
     }
 
@@ -809,47 +830,73 @@ open class STLabel: STPlatformView {
         }
     }
 
-    /// 下線 (縦書きでは文字の右に引く傍線) を描く。
+    /// 傍線 (下線・左傍線・取り消し線) を描く。
     /// 字面を変えずに引くものなので、グリフとは別に、続いている文字をまとめて 1 本にする。
-    private func drawUnderlines(_ dirtyRect: CGRect) {
-        guard hasUnderline, let cgContext = UIGraphicsGetCurrentContext() else { return }
-        cgContext.setFillColor(context.textColor.cgColor)
+    private func drawLines(_ dirtyRect: CGRect) {
+        guard !lineAnnotations.isEmpty, let cgContext = UIGraphicsGetCurrentContext() else { return }
+        cgContext.setStrokeColor(context.textColor.cgColor)
         let lineRange: Range<Int>? = isPaged ? pageLineRange : nil
         let translation = contentTranslation
-        let thickness = underlineThickness
+        let thickness = lineThickness
 
-        var group: CGRect = .null
-        var previous = -2
-        var previousLine = -1
+        for annotation in lineAnnotations {
+            let lower = max(0, annotation.range.lowerBound)
+            let upper = min(context.runs.count, annotation.range.upperBound)
+            guard lower < upper else { continue }
 
-        func flush() {
-            guard !group.isNull else { return }
-            var rect: CGRect
-            switch context.direction {
-            case .tbRl:
-                rect = CGRect(x: group.maxX + thickness, y: group.minY, width: thickness, height: group.height)
-            case .lrTb:
-                rect = CGRect(x: group.minX, y: group.maxY + thickness, width: group.width, height: thickness)
+            // 行ごとに 1 本ずつ引く
+            var group: CGRect = .null
+            var previousLine = -1
+
+            func flush() {
+                guard !group.isNull else { return }
+                let box = group.offsetBy(dx: translation.x, dy: translation.y)
+                let (from, to) = endpoints(of: box, for: annotation.position, thickness: thickness)
+                cgContext.strokeTextLine(
+                    from: from, to: to, thickness: thickness, style: annotation.style,
+                    isVertical: context.direction == .tbRl)
+                group = .null
             }
-            rect = rect.offsetBy(dx: translation.x, dy: translation.y)
-            cgContext.fill(rect)
-            group = .null
-        }
 
-        for (index, run) in context.runs.enumerated() {
-            guard run.style.contains(.underline), !run.char.isNewline else { continue }
-            if let lineRange {
-                guard lineRange.contains(run.line) else { continue }
-            } else if run.isHidden {
-                continue
+            for index in lower..<upper {
+                let run = context.runs[index]
+                guard !run.char.isNewline else { continue }
+                if let lineRange {
+                    guard lineRange.contains(run.line) else { continue }
+                } else if run.isHidden {
+                    continue
+                }
+                if run.line != previousLine { flush() }
+                group = group.isNull ? run.frame : group.union(run.frame)
+                previousLine = run.line
             }
-            // 行が変わるか、間が空いたら別の線にする
-            if index != previous + 1 || run.line != previousLine { flush() }
-            group = group.isNull ? run.frame : group.union(run.frame)
-            previous = index
-            previousLine = run.line
+            flush()
         }
-        flush()
+    }
+
+    /// 文字のかたまりに対して、線を引く始点と終点。
+    private func endpoints(
+        of box: CGRect, for position: STLinePosition, thickness: CGFloat
+    ) -> (CGPoint, CGPoint) {
+        let gap = thickness * 1.5
+        switch (context.direction, position) {
+        case (.tbRl, .underline):
+            let x = box.maxX + gap
+            return (.init(x: x, y: box.minY), .init(x: x, y: box.maxY))
+        case (.tbRl, .overline):
+            let x = box.minX - gap
+            return (.init(x: x, y: box.minY), .init(x: x, y: box.maxY))
+        case (.tbRl, .strikethrough):
+            return (.init(x: box.midX, y: box.minY), .init(x: box.midX, y: box.maxY))
+        case (.lrTb, .underline):
+            let y = box.maxY + gap
+            return (.init(x: box.minX, y: y), .init(x: box.maxX, y: y))
+        case (.lrTb, .overline):
+            let y = box.minY - gap
+            return (.init(x: box.minX, y: y), .init(x: box.maxX, y: y))
+        case (.lrTb, .strikethrough):
+            return (.init(x: box.minX, y: box.midY), .init(x: box.maxX, y: box.midY))
+        }
     }
 
     /// 挿絵のページを、表示領域に収まる大きさで中央に描く。
@@ -885,7 +932,7 @@ open class STLabel: STPlatformView {
         }
 
         // Draw
-        drawUnderlines(dirtyRect)
+        drawLines(dirtyRect)
         drawInlineImages(dirtyRect)
         drawGlyphs(dirtyRect)
 

@@ -34,8 +34,6 @@ public struct TextStyle: OptionSet, Sendable, Hashable {
 
     public static let bold = TextStyle(rawValue: 1 << 0)
     public static let italic = TextStyle(rawValue: 1 << 1)
-    /// 下線 (縦書きでは文字の右に引く傍線)。
-    public static let underline = TextStyle(rawValue: 1 << 2)
 }
 
 /// 範囲と、そこにかける字面の変化。
@@ -50,16 +48,47 @@ public struct StyleAnnotation: Equatable, Sendable {
     }
 }
 
+/// 線の引き方 (青空文庫の注記: 傍線・二重傍線・鎖線・破線・波線)。
+public enum LineStyle: Sendable, Equatable {
+    case solid, double, dotted, dashed, wave
+}
+
+/// 線を引く位置。
+public enum LinePosition: Sendable, Equatable {
+    /// 傍線 (縦書きでは文字の右、横書きでは下)。
+    case underline
+    /// 左傍線 (縦書きでは文字の左、横書きでは上)。
+    case overline
+    /// 取り消し線。
+    case strikethrough
+}
+
+/// 線を引く範囲。
+public struct LineAnnotation: Equatable, Sendable {
+    public let range: Range<Int>
+    public let style: LineStyle
+    public let position: LinePosition
+
+    public init(range: Range<Int>, style: LineStyle = .solid, position: LinePosition = .underline) {
+        self.range = range
+        self.style = style
+        self.position = position
+    }
+}
+
 /// 圏点 (傍点) を打つ範囲。
 public struct EmphasisAnnotation: Equatable, Sendable {
     /// 範囲 (`ExtractedText.text` の Character 単位、0 始まり)。
     public let range: Range<Int>
     /// 打つ印 (ゴマ点・丸など)。
     public let mark: String
+    /// 親文字のどちら側に打つか。青空文庫の「左に傍点」は `.under`。
+    public let position: RubyPosition
 
-    public init(range: Range<Int>, mark: String) {
+    public init(range: Range<Int>, mark: String, position: RubyPosition = .over) {
         self.range = range
         self.mark = mark
+        self.position = position
     }
 }
 
@@ -95,6 +124,10 @@ public struct ExtractedText: Sendable {
     public let styles: [StyleAnnotation]
     /// `<em>` や傍点のクラスから取り出した圏点。
     public let emphasis: [EmphasisAnnotation]
+    /// `<u>` や傍線のクラスから取り出した線。
+    public let lines: [LineAnnotation]
+    /// 縦中横 (`<span class="tcy">`) にする範囲。
+    public let tateChuYoko: [Range<Int>]
     /// `<img>` から取り出した画像。本文には置き場所として全角空白が 1 文字入る。
     public let images: [ImageAnnotation]
 
@@ -104,6 +137,8 @@ public struct ExtractedText: Sendable {
         ruby: [RubyAnnotation] = [],
         styles: [StyleAnnotation] = [],
         emphasis: [EmphasisAnnotation] = [],
+        lines: [LineAnnotation] = [],
+        tateChuYoko: [Range<Int>] = [],
         images: [ImageAnnotation] = []
     ) {
         self.text = text
@@ -111,6 +146,8 @@ public struct ExtractedText: Sendable {
         self.ruby = ruby
         self.styles = styles
         self.emphasis = emphasis
+        self.lines = lines
+        self.tateChuYoko = tateChuYoko
         self.images = images
     }
 }
@@ -153,29 +190,22 @@ public enum PlainTextExtractor {
     private static let preformattedTags: Set<String> = ["pre"]
 
     /// 強調を表す要素。
-    static let emphasisTags: Set<String> = ["b", "strong", "em", "i", "u", "ins"]
+    static let emphasisTags: Set<String> = ["b", "strong", "em", "i", "u", "ins", "s", "strike", "del"]
 
-    /// 下線を表す class か (`<span class="underline">` のような本文)。
-    static func isUnderline(className: String) -> Bool {
-        let name = className.lowercased()
-        return name.contains("underline") || name.contains("bosen") || name.contains("傍線")
+    /// 文字の修飾を表す class。青空文庫の注記 (https://www.aozora.gr.jp/annotation/) を
+    /// HTML にした変換器が出力するものに合わせている。
+    enum Decoration: Equatable {
+        /// 傍点。
+        case emphasis(mark: String, position: RubyPosition)
+        /// 傍線・左傍線・取り消し線。
+        case line(style: LineStyle, position: LinePosition)
+        /// 縦中横。
+        case tateChuYoko
+        /// 太字・斜体。
+        case style(TextStyle)
     }
 
-    /// 圏点の種類を表す class から、打つ印を決める。傍点を class で指定する本文は多い
-    /// (青空文庫からの変換では `<em class="sesame_dot">`)。
-    static func emphasisMark(forClass className: String) -> String? {
-        let name = className.lowercased()
-        guard name.contains("sesame") || name.contains("kenten") || name.contains("boten")
-            || name.contains("emphasis") || name.contains("bouten") || name.contains("dot")
-            || name.contains("maru") else { return nil }
-        if name.contains("open") || name.contains("white") || name.contains("shiro") {
-            return name.contains("sesame") ? EmphasisMark.openSesame : EmphasisMark.openDot
-        }
-        if name.contains("maru") || name.contains("circle") { return EmphasisMark.dot }
-        return EmphasisMark.sesame
-    }
-
-    /// 圏点に使う記号。
+    /// 圏点に使う記号。青空文庫の傍点の種類に対応する。
     enum EmphasisMark {
         /// ゴマ点。
         static let sesame = "\u{FE45}"
@@ -183,6 +213,100 @@ public enum PlainTextExtractor {
         /// 黒丸。
         static let dot = "\u{25CF}"
         static let openDot = "\u{25CB}"
+        /// 黒三角。
+        static let triangle = "\u{25B2}"
+        static let openTriangle = "\u{25B3}"
+        /// 二重丸。
+        static let doubleCircle = "\u{25CE}"
+        /// 蛇の目。
+        static let fisheye = "\u{25C9}"
+        /// ばつ傍点。
+        static let saltire = "\u{00D7}"
+    }
+
+    /// class 名から文字の修飾を決める。複数の語を含む class でも拾えるよう、語ごとに見る。
+    static func decorations(forClass className: String) -> [Decoration] {
+        let names = className.lowercased().split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+        return names.compactMap(decoration(forClassName:))
+    }
+
+    private static func decoration(forClassName name: String) -> Decoration? {
+        // 青空文庫の傍点。末尾が _after なら左 (縦書き) に打つ
+        let isAfter = name.hasSuffix("_after")
+        let base = isAfter ? String(name.dropLast("_after".count)) : name
+        let position: RubyPosition = isAfter ? .under : .over
+        if let mark = emphasisMark(forClassName: base) {
+            return .emphasis(mark: mark, position: position)
+        }
+        // 青空文庫の傍線。underline_* は傍線 (右・下)、overline_* は左傍線
+        if let line = lineDecoration(forClassName: base) {
+            return line
+        }
+        switch base {
+        case "tcy":
+            return .tateChuYoko
+        case "futoji", "gothic", "goth", "b", "bold":
+            return .style(.bold)
+        case "shatai", "i", "italic":
+            return .style(.italic)
+        default:
+            return nil
+        }
+    }
+
+    private static func emphasisMark(forClassName name: String) -> String? {
+        switch name {
+        case "sesame_dot", "sesame", "kenten", "boten", "bouten", "emphasis", "em-sesame":
+            return EmphasisMark.sesame
+        case "white_sesame_dot", "white_sesame", "em-open-sesame":
+            return EmphasisMark.openSesame
+        case "black_circle", "maru", "em-maru", "em-dot", "dot":
+            return EmphasisMark.dot
+        case "white_circle", "shiro_maru", "em-open-dot":
+            return EmphasisMark.openDot
+        case "black_up-pointing_triangle", "sankaku":
+            return EmphasisMark.triangle
+        case "white_up-pointing_triangle", "shiro_sankaku":
+            return EmphasisMark.openTriangle
+        case "bullseye", "nijuumaru":
+            return EmphasisMark.doubleCircle
+        case "fisheye", "janome":
+            return EmphasisMark.fisheye
+        case "saltire", "batsu":
+            return EmphasisMark.saltire
+        default:
+            return nil
+        }
+    }
+
+    private static func lineDecoration(forClassName name: String) -> Decoration? {
+        // 取り消し線
+        if name == "strike" || name == "line-through" { return .line(style: .solid, position: .strikethrough) }
+        if name == "dbl_strike" { return .line(style: .double, position: .strikethrough) }
+
+        let position: LinePosition
+        let rest: String
+        if name == "underline" || name == "bosen" || name == "傍線" {
+            return .line(style: .solid, position: .underline)
+        } else if name.hasPrefix("underline_") {
+            position = .underline
+            rest = String(name.dropFirst("underline_".count))
+        } else if name.hasPrefix("overline_") {
+            position = .overline
+            rest = String(name.dropFirst("overline_".count))
+        } else if name == "overline" {
+            return .line(style: .solid, position: .overline)
+        } else {
+            return nil
+        }
+        switch rest {
+        case "solid": return .line(style: .solid, position: position)
+        case "double": return .line(style: .double, position: position)
+        case "dotted": return .line(style: .dotted, position: position)
+        case "dashed": return .line(style: .dashed, position: position)
+        case "wave", "wavy": return .line(style: .wave, position: position)
+        default: return .line(style: .solid, position: position)
+        }
     }
 
     static func extract(html: String) -> ExtractedText {
@@ -538,6 +662,8 @@ public enum PlainTextExtractor {
         private var wideCharacterCount = 0
         private var styles: [StyleAnnotation] = []
         private var emphasis: [EmphasisAnnotation] = []
+        private var lines: [LineAnnotation] = []
+        private var tateChuYoko: [Range<Int>] = []
         /// 画像の (置き場所, パス, alt)。置き場所は本文を組み立て終わってから確定する。
         private var images: [(offset: Int, source: String, alt: String)] = []
         private var ruby: [RubyAnnotation] = []
@@ -639,20 +765,19 @@ public enum PlainTextExtractor {
             guard let start = open.start, start < count else { return }
             let range = start..<count
 
-            // class で傍点・傍線が指定されていればそれに従う
-            if let mark = PlainTextExtractor.emphasisMark(forClass: open.className) {
-                emphasis.append(EmphasisAnnotation(range: range, mark: mark))
-                return
-            }
-            if PlainTextExtractor.isUnderline(className: open.className) {
-                styles.append(StyleAnnotation(range: range, style: .underline))
+            // class で指定されていればそれに従う (青空文庫の注記から変換されたもの)
+            let decorations = PlainTextExtractor.decorations(forClass: open.className)
+            if !decorations.isEmpty {
+                for decoration in decorations { apply(decoration, to: range) }
                 return
             }
             switch open.tag {
             case "b", "strong":
                 styles.append(StyleAnnotation(range: range, style: .bold))
             case "u", "ins":
-                styles.append(StyleAnnotation(range: range, style: .underline))
+                lines.append(LineAnnotation(range: range, style: .solid, position: .underline))
+            case "s", "strike", "del":
+                lines.append(LineAnnotation(range: range, style: .solid, position: .strikethrough))
             case "em", "i":
                 // 日本語には斜体が無いので、全角の文字を含む範囲は圏点にする
                 if wideCharacterCount > open.wideAtStart {
@@ -662,6 +787,19 @@ public enum PlainTextExtractor {
                 }
             default:
                 break
+            }
+        }
+
+        private mutating func apply(_ decoration: PlainTextExtractor.Decoration, to range: Range<Int>) {
+            switch decoration {
+            case .emphasis(let mark, let position):
+                emphasis.append(EmphasisAnnotation(range: range, mark: mark, position: position))
+            case .line(let style, let position):
+                lines.append(LineAnnotation(range: range, style: style, position: position))
+            case .style(let style):
+                styles.append(StyleAnnotation(range: range, style: style))
+            case .tateChuYoko:
+                tateChuYoko.append(range)
             }
         }
 
@@ -852,7 +990,11 @@ public enum PlainTextExtractor {
             }
             let shiftedEmphasis = emphasis.compactMap { annotation -> EmphasisAnnotation? in
                 guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
-                return EmphasisAnnotation(range: range, mark: annotation.mark)
+                return EmphasisAnnotation(range: range, mark: annotation.mark, position: annotation.position)
+            }
+            let shiftedLines = lines.compactMap { annotation -> LineAnnotation? in
+                guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
+                return LineAnnotation(range: range, style: annotation.style, position: annotation.position)
             }
             // 置き場所の前後が改行 (または本文の端) なら、段落に 1 つだけ置かれた挿絵とみなす
             let characters = Array(text)
@@ -863,9 +1005,11 @@ public enum PlainTextExtractor {
                     && (offset == characters.count - 1 || characters[offset + 1].isNewline)
                 return ImageAnnotation(offset: offset, source: image.source, alt: image.alt, isBlock: isAlone)
             }
+            let shiftedTateChuYoko = tateChuYoko.compactMap { shift($0, by: leading, limit: length) }
             return ExtractedText(
-                text: text, anchors: adjusted, ruby: shifted,
-                styles: shiftedStyles, emphasis: shiftedEmphasis, images: shiftedImages)
+                text: text, anchors: adjusted, ruby: shifted, styles: shiftedStyles,
+                emphasis: shiftedEmphasis, lines: shiftedLines,
+                tateChuYoko: shiftedTateChuYoko, images: shiftedImages)
         }
     }
 }
