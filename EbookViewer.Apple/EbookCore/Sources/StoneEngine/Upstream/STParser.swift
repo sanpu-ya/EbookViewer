@@ -37,6 +37,9 @@ class STParser {
     //--------------------------------------------------------------//
     
     private func createRun(char: Character, tokenId: Int, tokenRunIndex: Int) -> STRun {
+        // Get style of this character (EbookViewer)
+        let style = context.style(at: runs.count)
+        
         // Decide font ID
         let fontId: Int
         if char.isNewline {
@@ -47,7 +50,7 @@ class STParser {
         }
         
         // Get CT font
-        let ctFont = context.fontManager.ctFont(fontId: fontId, size: context.adjustFontSize)
+        let ctFont = context.fontManager.ctFont(fontId: fontId, size: context.adjustFontSize, style: style)
         
         // Get glyphs
         var buf = Array<UniChar>(repeating: 0, count: char.utf16.count)
@@ -75,7 +78,7 @@ class STParser {
         let punctuation = STPunctuation.valueOf(charatcter: char)
         
         // Create run
-        return STRun(tokenId: tokenId, tokenRunIndex: tokenRunIndex, fontId: fontId, char: char, punctuation: punctuation, glyph: glyph, advance: advance, boundingRect: boundingRect, position: .zero, frame: .zero, visibility: .visible, line: 0)
+        return STRun(tokenId: tokenId, tokenRunIndex: tokenRunIndex, fontId: fontId, style: style, char: char, punctuation: punctuation, glyph: glyph, advance: advance, boundingRect: boundingRect, position: .zero, frame: .zero, visibility: .visible, line: 0)
     }
     
     private func appendRuns(string: String, tokenId: Int) {

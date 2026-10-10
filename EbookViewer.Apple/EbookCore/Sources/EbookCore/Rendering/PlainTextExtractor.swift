@@ -24,6 +24,43 @@ public struct RubyAnnotation: Equatable, Sendable {
     }
 }
 
+/// 文字の字面の変化。
+public struct TextStyle: OptionSet, Sendable, Hashable {
+    public let rawValue: Int
+
+    public init(rawValue: Int) {
+        self.rawValue = rawValue
+    }
+
+    public static let bold = TextStyle(rawValue: 1 << 0)
+    public static let italic = TextStyle(rawValue: 1 << 1)
+}
+
+/// 範囲と、そこにかける字面の変化。
+public struct StyleAnnotation: Equatable, Sendable {
+    /// 範囲 (`ExtractedText.text` の Character 単位、0 始まり)。
+    public let range: Range<Int>
+    public let style: TextStyle
+
+    public init(range: Range<Int>, style: TextStyle) {
+        self.range = range
+        self.style = style
+    }
+}
+
+/// 圏点 (傍点) を打つ範囲。
+public struct EmphasisAnnotation: Equatable, Sendable {
+    /// 範囲 (`ExtractedText.text` の Character 単位、0 始まり)。
+    public let range: Range<Int>
+    /// 打つ印 (ゴマ点・丸など)。
+    public let mark: String
+
+    public init(range: Range<Int>, mark: String) {
+        self.range = range
+        self.mark = mark
+    }
+}
+
 /// 本文ドキュメントから取り出したプレーンテキスト。
 public struct ExtractedText: Sendable {
     /// 本文。段落の区切りは改行 1 つ、見出しなどの前後は空行になる。
@@ -33,11 +70,23 @@ public struct ExtractedText: Sendable {
     public let anchors: [String: Int]
     /// `<ruby>` から取り出したルビ。本文に出てくる順に並ぶ。
     public let ruby: [RubyAnnotation]
+    /// `<strong>` / `<b>` などから取り出した字面の変化。
+    public let styles: [StyleAnnotation]
+    /// `<em>` や傍点のクラスから取り出した圏点。
+    public let emphasis: [EmphasisAnnotation]
 
-    public init(text: String, anchors: [String: Int], ruby: [RubyAnnotation] = []) {
+    public init(
+        text: String,
+        anchors: [String: Int],
+        ruby: [RubyAnnotation] = [],
+        styles: [StyleAnnotation] = [],
+        emphasis: [EmphasisAnnotation] = []
+    ) {
         self.text = text
         self.anchors = anchors
         self.ruby = ruby
+        self.styles = styles
+        self.emphasis = emphasis
     }
 }
 
@@ -77,6 +126,33 @@ public enum PlainTextExtractor {
 
     /// 空白をそのまま残す要素。
     private static let preformattedTags: Set<String> = ["pre"]
+
+    /// 強調を表す要素。
+    static let emphasisTags: Set<String> = ["b", "strong", "em", "i"]
+
+    /// 圏点の種類を表す class から、打つ印を決める。傍点を class で指定する本文は多い
+    /// (青空文庫からの変換では `<em class="sesame_dot">`)。
+    static func emphasisMark(forClass className: String) -> String? {
+        let name = className.lowercased()
+        guard name.contains("sesame") || name.contains("kenten") || name.contains("boten")
+            || name.contains("emphasis") || name.contains("bouten") || name.contains("dot")
+            || name.contains("maru") else { return nil }
+        if name.contains("open") || name.contains("white") || name.contains("shiro") {
+            return name.contains("sesame") ? EmphasisMark.openSesame : EmphasisMark.openDot
+        }
+        if name.contains("maru") || name.contains("circle") { return EmphasisMark.dot }
+        return EmphasisMark.sesame
+    }
+
+    /// 圏点に使う記号。
+    enum EmphasisMark {
+        /// ゴマ点。
+        static let sesame = "\u{FE45}"
+        static let openSesame = "\u{FE46}"
+        /// 黒丸。
+        static let dot = "\u{25CF}"
+        static let openDot = "\u{25CB}"
+    }
 
     static func extract(html: String) -> ExtractedText {
         var builder = Builder()
@@ -256,6 +332,26 @@ public enum PlainTextExtractor {
             break
         }
 
+        // 強調表示
+        if emphasisTags.contains(tag.name) {
+            if tag.isClose {
+                builder.endEmphasis(tag: tag.name)
+            } else if !tag.isSelfClose {
+                builder.beginEmphasis(tag: tag.name, className: tag.attributes["class"] ?? "")
+            }
+            return
+        }
+        // 傍点を class で表している本文 (<span class="sesame">) も拾う。
+        // 閉じタグには class が無いので、入れ子がずれないよう span はすべて対にして覚えておく
+        if tag.name == "span" {
+            if tag.isClose {
+                builder.endEmphasis(tag: tag.name)
+            } else if !tag.isSelfClose {
+                builder.beginEmphasis(tag: tag.name, className: tag.attributes["class"] ?? "")
+            }
+            return
+        }
+
         // 画像
         if tag.name == "img" || tag.name == "image" {
             guard !tag.isClose else { return }
@@ -402,6 +498,14 @@ public enum PlainTextExtractor {
         private var rubyContainerCount = 0
         /// 1 段目のルビを、親文字のどのまとまりまで対応付けたか。
         private var rubyReadingIndex = 0
+        /// 開いている強調の要素。
+        /// start は開いた時点では決まらない (畳み込んだ空白がまだ出ていない) ので、
+        /// 最初の 1 文字が出たときに埋める。
+        private var emphasisStack: [(tag: String, className: String, start: Int?, wideAtStart: Int)] = []
+        /// ここまでに出した全角の文字数。強調が日本語にかかっているかの判断に使う。
+        private var wideCharacterCount = 0
+        private var styles: [StyleAnnotation] = []
+        private var emphasis: [EmphasisAnnotation] = []
         private var ruby: [RubyAnnotation] = []
 
         var isDropping: Bool { droppingTag != nil }
@@ -475,6 +579,38 @@ public enum PlainTextExtractor {
             guard rubyReadingIndex < rubyChunks.count else { return }
             ruby.append(RubyAnnotation(range: rubyChunks[rubyReadingIndex], text: reading))
             rubyReadingIndex += 1
+        }
+
+        // MARK: 強調表示
+
+        mutating func beginEmphasis(tag: String, className: String) {
+            emphasisStack.append((tag, className, nil, wideCharacterCount))
+        }
+
+        mutating func endEmphasis(tag: String) {
+            guard let index = emphasisStack.lastIndex(where: { $0.tag == tag }) else { return }
+            let open = emphasisStack.remove(at: index)
+            guard let start = open.start, start < count else { return }
+            let range = start..<count
+
+            // class で傍点が指定されていればそれに従う
+            if let mark = PlainTextExtractor.emphasisMark(forClass: open.className) {
+                emphasis.append(EmphasisAnnotation(range: range, mark: mark))
+                return
+            }
+            switch open.tag {
+            case "b", "strong":
+                styles.append(StyleAnnotation(range: range, style: .bold))
+            case "em", "i":
+                // 日本語には斜体が無いので、全角の文字を含む範囲は圏点にする
+                if wideCharacterCount > open.wideAtStart {
+                    emphasis.append(EmphasisAnnotation(range: range, mark: PlainTextExtractor.EmphasisMark.sesame))
+                } else {
+                    styles.append(StyleAnnotation(range: range, style: .italic))
+                }
+            default:
+                break
+            }
         }
 
         mutating func beginRubyContainer() {
@@ -551,6 +687,10 @@ public enum PlainTextExtractor {
                 for id in pendingAnchors { anchors[id] = count }
                 pendingAnchors.removeAll()
             }
+            // 強調の始まりも、畳み込んだ空白ではなく中身の 1 文字目にそろえる
+            for i in emphasisStack.indices where emphasisStack[i].start == nil {
+                emphasisStack[i].start = count
+            }
             emit(c)
         }
 
@@ -582,6 +722,7 @@ public enum PlainTextExtractor {
                 rubyBase = (rubyBase?.lowerBound ?? count)..<(count + 1)
                 rubyWhole = (rubyWhole?.lowerBound ?? count)..<(count + 1)
             }
+            if Self.isWideScript(c) { wideCharacterCount += 1 }
             out.append(c)
             count += 1
             lastCharacter = c
@@ -622,6 +763,13 @@ public enum PlainTextExtractor {
             }
         }
 
+        /// 先頭を削ったぶんだけ範囲を詰める。本文の外に出るものは捨てる。
+        private func shift(_ range: Range<Int>, by leading: Int, limit: Int) -> Range<Int>? {
+            let lower = min(max(0, range.lowerBound - leading), limit)
+            let upper = min(max(0, range.upperBound - leading), limit)
+            return lower < upper ? lower..<upper : nil
+        }
+
         mutating func finish() -> ExtractedText {
             let text = out.trimmingCharacters(in: Self.trimmed)
             // 先頭を削った分だけアンカー位置を詰める
@@ -641,7 +789,17 @@ public enum PlainTextExtractor {
                 guard lower < upper else { return nil }
                 return RubyAnnotation(range: lower..<upper, text: annotation.text, position: annotation.position)
             }
-            return ExtractedText(text: text, anchors: adjusted, ruby: shifted)
+            let shiftedStyles = styles.compactMap { annotation -> StyleAnnotation? in
+                guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
+                return StyleAnnotation(range: range, style: annotation.style)
+            }
+            let shiftedEmphasis = emphasis.compactMap { annotation -> EmphasisAnnotation? in
+                guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
+                return EmphasisAnnotation(range: range, mark: annotation.mark)
+            }
+            return ExtractedText(
+                text: text, anchors: adjusted, ruby: shifted,
+                styles: shiftedStyles, emphasis: shiftedEmphasis)
         }
     }
 }

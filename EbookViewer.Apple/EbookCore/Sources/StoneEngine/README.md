@@ -58,7 +58,8 @@ semantic color、`UIGraphicsGetCurrentContext()` を用意するので、これ�
    (`LayoutSignature`) を比べ、変わっていなければ `STParser` / `STLayout` を呼び直しません。
    ページを送るたびに章全体を組み直さないためです。
 6. **ルビを足しました** (`rubyAnnotations` / `rubyFontScale` / `rubyExtent`)。詳細は下記。
-7. **字間を足しました**。`STContext.spacings` に run ごとの前後の空きを入れると、`STLayout` が
+7. **強調表示を足しました** (`styleAnnotations` / `emphasisAnnotations`)。詳細は下記。
+8. **字間を足しました**。`STContext.spacings` に run ごとの前後の空きを入れると、`STLayout` が
    その空きを含めて文字を送るようにしました (`layoutRunLrTb` / `layoutRunTbRl` の 3 か所と、
    次の語が入るかを見る `STContext.advance(token:)`)。ルビのほうが長い親文字を広げるのに使います。
 
@@ -101,7 +102,23 @@ semantic color、`UIGraphicsGetCurrentContext()` を用意するので、これ�
   (縦書きでは右)、`.under` が下 (縦書きでは左) です。両側にルビがあるときは、行の両脇に
   ルビぶんの空きを取り分けます。
 
-### ルビに合わせて親文字を広げる
+### 強調表示
+
+太字・斜体は**文字ごとにフォントを差し替えて**表します (`STStyle.swift`)。
+
+- `STLabel.styleAnnotations` に範囲と字面 (`.bold` / `.italic`) を渡すと、組む前に
+  `STContext.styles` (文字ごとの字面) に展開され、`STParser` がその字面のフォントで
+  グリフと字幅を取ります。字幅が変わるので**行分割にも反映されます**。
+- フォントは `CTFontCreateCopyWithSymbolicTraits` で作ります。Hiragino なら W3 → W6 に
+  なります。日本語フォントには斜体が無いので、斜体を指定しても正体のままになります。
+- 描画は字面ごとにまとめます (`DrawBucket` の種別に字面を足しました)。
+
+圏点 (傍点) は字面を変えずに文字の脇へ印を打つものなので、**ルビと同じしくみに載せています**。
+`STLabel.emphasisAnnotations` に範囲を渡すと、1 文字ずつの注記 (印は `﹅` など) に展開されて
+ルビと同じ経路で組まれます。同じ文字にルビがあるときは、CSS の `text-emphasis` と同じく
+圏点を反対側へ逃がします。
+
+## ルビに合わせて親文字を広げる
 
 「承 (うけたまわ)」のようにルビが親文字より長いとき、親文字の字間を広げて長さをそろえます。
 空きは JIS X 4051 の配置に倣い、親文字の外側が内側の半分になるように配ります

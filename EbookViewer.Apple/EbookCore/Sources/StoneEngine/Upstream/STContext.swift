@@ -65,6 +65,15 @@ open class STContext {
         runId >= 0 && runId < spacings.count ? spacings[runId] : .zero
     }
     
+    // Style (EbookViewer)
+    /// 文字ごとの字面の変化 (太字・斜体)。添字は run の添字。空なら変化なし。
+    public var styles: [STTextStyle] = []
+    
+    /// runId の run の字面。
+    public func style(at runId: Int) -> STTextStyle {
+        runId >= 0 && runId < styles.count ? styles[runId] : []
+    }
+    
     //--------------------------------------------------------------//
     // MARK: - Advance
     //--------------------------------------------------------------//

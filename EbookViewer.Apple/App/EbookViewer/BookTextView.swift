@@ -69,11 +69,20 @@ final class TextViewCoordinator: TextBridge {
 
     // MARK: - TextBridge
 
-    func show(text: String, anchors: [String: Int], ruby: [RubyAnnotation], initial: InitialPosition) {
-        self.anchors = anchors
-        label.text = text
-        label.rubyAnnotations = ruby.map {
+    func show(_ content: ExtractedText, initial: InitialPosition) {
+        anchors = content.anchors
+        label.text = content.text
+        label.rubyAnnotations = content.ruby.map {
             STRubyAnnotation(range: $0.range, text: $0.text, position: $0.position == .under ? .under : .over)
+        }
+        label.emphasisAnnotations = content.emphasis.map {
+            STEmphasisAnnotation(range: $0.range, mark: $0.mark)
+        }
+        label.styleAnnotations = content.styles.map {
+            var style: STTextStyle = []
+            if $0.style.contains(.bold) { style.insert(.bold) }
+            if $0.style.contains(.italic) { style.insert(.italic) }
+            return STStyleAnnotation(range: $0.range, style: style)
         }
         pendingInitial = initial
         applyPendingInitial(needsLayout: true)
@@ -86,6 +95,8 @@ final class TextViewCoordinator: TextBridge {
         currentPages = 1
         label.text = nil
         label.rubyAnnotations = []
+        label.emphasisAnnotations = []
+        label.styleAnnotations = []
         label.pageIndex = 0
     }
 

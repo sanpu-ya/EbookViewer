@@ -37,6 +37,15 @@ open class STFontManager {
     
     // CT fonts cache
     static private var fontIdCtFonts = [Int: CTFont]()
+    
+    // Styled fonts cache (EbookViewer)
+    fileprivate struct StyledFontKey: Hashable {
+        let name: String
+        let size: CGFloat
+        let transform: CGAffineTransform
+        let style: STTextStyle
+    }
+    fileprivate var styledFonts = [StyledFontKey: CTFont]()
 }
 
 extension STFontManager {
@@ -69,7 +78,7 @@ extension STFontManager {
         return 0
     }
     
-    func ctFont(fontId: Int, size: CGFloat, isClockwise: Bool = false) -> CTFont {
+    func ctFont(fontId: Int, size: CGFloat, isClockwise: Bool = false, style: STTextStyle = []) -> CTFont {
         // Get font name and script
         let fontName = possibleFontNames[fontId]
         let script = possibleScripts[fontId]
@@ -88,7 +97,28 @@ extension STFontManager {
         // Create font
         let font = CTFontCreateWithName(fontName as CFString, size, &transform)
         
-        return font
+        // For plain
+        guard !style.isEmpty else { return font }
+        
+        // Get styled font (EbookViewer)
+        return styledFont(font, name: fontName, size: size, transform: transform, style: style)
+    }
+    
+    /// 太字・斜体にしたフォント (EbookViewer の追加)。
+    /// 日本語フォントのように対応する字面が無ければ、元のフォントをそのまま返す。
+    /// 1 文字ごとに作ると重いので覚えておく。
+    private func styledFont(_ font: CTFont, name: String, size: CGFloat, transform: CGAffineTransform, style: STTextStyle) -> CTFont {
+        let key = StyledFontKey(name: name, size: size, transform: transform, style: style)
+        if let cached = styledFonts[key] { return cached }
+        
+        var traits: CTFontSymbolicTraits = []
+        if style.contains(.bold) { traits.insert(.traitBold) }
+        if style.contains(.italic) { traits.insert(.traitItalic) }
+        var transform = transform
+        let styled = CTFontCreateCopyWithSymbolicTraits(font, size, &transform, traits, traits) ?? font
+        styledFonts[key] = styled
+        
+        return styled
     }
     
     func ascent(fontId: Int, size: CGFloat) -> CGFloat {

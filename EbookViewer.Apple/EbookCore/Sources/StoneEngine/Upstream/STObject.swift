@@ -506,6 +506,8 @@ public struct STRun {
     public var tokenId: Int
     public var tokenRunIndex: Int
     public var fontId: Int
+    /// 字面の変化 (太字・斜体)。EbookViewer の追加。
+    public var style: STTextStyle = []
     public var char: Character
     public var punctuation: STPunctuation
     public var glyph: CGGlyph

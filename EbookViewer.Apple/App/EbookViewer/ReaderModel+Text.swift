@@ -26,7 +26,7 @@ extension ReaderModel {
             if extracted.text.isEmpty {
                 AppDirectories.trace("stone: no text in \(path)")
             }
-            text.show(text: extracted.text, anchors: extracted.anchors, ruby: extracted.ruby, initial: initial)
+            text.show(extracted, initial: initial)
             text.focus()
         }
     }

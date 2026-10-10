@@ -150,6 +150,64 @@ struct PlainTextExtractorTests {
         #expect(extract("<p>&lt;a&gt; &amp; &#x3042;&#12356;&hellip;</p>").text == "<a> & あい…")
     }
 
+    // MARK: - 強調表示
+
+    @Test func takesBoldFromStrongAndB() {
+        let r = extract("<p>これは<strong>重要</strong>で<b>太字</b>です</p>")
+        #expect(r.text == "これは重要で太字です")
+        #expect(r.styles == [
+            StyleAnnotation(range: 3..<5, style: .bold),
+            StyleAnnotation(range: 6..<8, style: .bold),
+        ])
+        #expect(r.emphasis.isEmpty)
+    }
+
+    @Test func japaneseEmUsesEmphasisMarksInsteadOfItalic() {
+        // 日本語には斜体が無いので圏点にする
+        let r = extract("<p>これは<em>大事</em>です</p>")
+        #expect(r.text == "これは大事です")
+        #expect(r.emphasis == [EmphasisAnnotation(range: 3..<5, mark: "\u{FE45}")])
+        #expect(r.styles.isEmpty)
+    }
+
+    @Test func latinEmUsesItalic() {
+        let r = extract("<p>This is <em>very</em> important</p>")
+        #expect(r.styles == [StyleAnnotation(range: 8..<12, style: .italic)])
+        #expect(r.emphasis.isEmpty)
+    }
+
+    @Test func takesEmphasisMarksFromClassNames() {
+        // 青空文庫からの変換でよくある形
+        let r = extract("<p><em class=\"sesame_dot\">傍点</em>と<span class=\"em-maru\">丸</span></p>")
+        #expect(r.text == "傍点と丸")
+        #expect(r.emphasis == [
+            EmphasisAnnotation(range: 0..<2, mark: "\u{FE45}"),
+            EmphasisAnnotation(range: 3..<4, mark: "\u{25CF}"),
+        ])
+    }
+
+    @Test func nestedEmphasisKeepsBothRanges() {
+        let r = extract("<p><strong>太い<em>そして大事</em></strong></p>")
+        #expect(r.text == "太いそして大事")
+        #expect(r.styles == [StyleAnnotation(range: 0..<7, style: .bold)])
+        #expect(r.emphasis == [EmphasisAnnotation(range: 2..<7, mark: "\u{FE45}")])
+    }
+
+    @Test func ignoresEmptyEmphasis() {
+        #expect(extract("<p><strong></strong>本文</p>").styles.isEmpty)
+        #expect(extract("<p>本文<em></em></p>").emphasis.isEmpty)
+        // 対応する開きタグが無い閉じタグでも落ちない
+        #expect(extract("<p>本文</strong></p>").text == "本文")
+    }
+
+    @Test func emphasisRangesFollowTheSurroundingText() {
+        let r = extract("<p>前</p><p>中<strong>太字</strong>後</p>")
+        #expect(r.text == "前\n中太字後")
+        #expect(r.styles == [StyleAnnotation(range: 3..<5, style: .bold)])
+        let chars = Array(r.text)
+        #expect(String(chars[3..<5]) == "太字")
+    }
+
     @Test func replacesImageWithPlaceholder() {
         #expect(extract("<p>前<img src=\"a.png\" alt=\"図1\"/>後</p>").text == "前\n［図1］\n後")
         let noAlt = extract("<p><img src=\"a.png\"/></p>").text
