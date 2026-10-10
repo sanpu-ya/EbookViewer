@@ -92,11 +92,17 @@ struct STRubyLayout {
 
     private let prepared: [Prepared]
     private let direction: STDirection
+    /// 隣の文字にルビを掛けてよいか。
+    private let allowsOverhang: Bool
+    /// 片側に掛けてよい最大の量 (ルビ 1 文字ぶん)。
+    private let overhangLimit: CGFloat
 
     /// ルビをそれぞれ 1 行に組む。
     /// - Parameter fontScale: 親文字に対するルビの大きさの比 (0.5 なら半分)。
-    init(context: STContext, annotations: [STRubyAnnotation], fontScale: CGFloat) {
+    init(context: STContext, annotations: [STRubyAnnotation], fontScale: CGFloat, allowsOverhang: Bool = true) {
         direction = context.direction
+        self.allowsOverhang = allowsOverhang
+        overhangLimit = context.adjustFontSize * fontScale
         guard !annotations.isEmpty, fontScale > 0 else {
             prepared = []
             return
@@ -127,17 +133,16 @@ struct STRubyLayout {
     /// この配分になる。
     func spacings(context: STContext) -> [STSpacing] {
         guard !prepared.isEmpty, !context.runs.isEmpty else { return [] }
+        let annotated = annotatedIndexes()
         var spacings = [STSpacing](repeating: .zero, count: context.runs.count)
         var needsToWiden = false
         for ruby in prepared {
             guard let range = Self.baseRange(ruby.annotation, in: context) else { continue }
-            let baseLength = range.reduce(CGFloat.zero) {
-                $0 + Self.inlineExtent(of: context.runs[$1].frame, direction: direction)
-            }
-            // 1pt に満たない差のために組み直さない
-            let extra = ruby.inlineLength - baseLength
-            guard extra > 1 else { continue }
+            let overhang = overhangs(for: ruby, range: range, context: context, annotated: annotated)
 
+            // 掛けても収まらないぶんだけ親文字を広げる。1pt に満たない差のために組み直さない
+            let extra = overhang.extra - overhang.before - overhang.after
+            guard extra > 1 else { continue }
             let half = extra / CGFloat(range.count * 2)
             for i in range {
                 // 二段ルビでは同じ親文字に 2 つのルビが付く。長いほうに合わせる
@@ -148,14 +153,78 @@ struct STRubyLayout {
         return needsToWiden ? spacings : []
     }
 
+    /// ルビが親文字からはみ出す量と、その前後への振り分け (ルビの掛け)。
+    ///
+    /// 親文字を広げる量を決めるときと、実際に置くときの両方で使う。置くときは組み直したあとの
+    /// 行割りで取り直すので、広げたことで行が変わっても置き場所がずれない。
+    private func overhangs(
+        for ruby: Prepared, range: Range<Int>, context: STContext, annotated: Set<Int>
+    ) -> (extra: CGFloat, before: CGFloat, after: CGFloat) {
+        let baseLength = range.reduce(CGFloat.zero) {
+            $0 + Self.inlineExtent(of: context.runs[$1].frame, direction: direction)
+        }
+        let extra = ruby.inlineLength - baseLength
+        guard extra > 0 else { return (0, 0, 0) }
+        var before = min(extra * 0.5, overhangAllowance(at: range.lowerBound - 1, baseAt: range.lowerBound,
+                                                        context: context, annotated: annotated))
+        let after = min(extra - before, overhangAllowance(at: range.upperBound, baseAt: range.upperBound - 1,
+                                                          context: context, annotated: annotated))
+        before = min(extra - after, before)
+        return (extra, before, after)
+    }
+
+    /// 親文字の隣にルビを掛けてよい量。掛けられないなら 0。
+    ///
+    /// JIS X 4051 に倣い、掛けてよいのは隣が**仮名**のときだけで、量はルビ 1 文字ぶんまで。
+    /// 行をまたぐ場合と、隣にもルビや圏点が付いている場合は掛けない。
+    private func overhangAllowance(
+        at index: Int, baseAt base: Int, context: STContext, annotated: Set<Int>
+    ) -> CGFloat {
+        guard allowsOverhang else { return 0 }
+        guard index >= 0, index < context.runs.count else { return 0 }
+        let neighbour = context.runs[index]
+        guard !neighbour.char.isNewline else { return 0 }
+        // 行が変わるところでは掛けない
+        guard neighbour.line == context.runs[base].line else { return 0 }
+        guard !annotated.contains(index) else { return 0 }
+        guard Self.allowsOverhang(over: neighbour.char) else { return 0 }
+        return overhangLimit
+    }
+
+    /// ルビを掛けてよい文字か (仮名だけ)。漢字や欧文には掛けない。
+    static func allowsOverhang(over char: Character) -> Bool {
+        guard let u = char.unicodeScalars.first, char.unicodeScalars.count == 1 else { return false }
+        switch u.value {
+        case 0x3041...0x309F,  // ひらがな
+             0x30A0...0x30FF,  // カタカナ (長音符・小書きを含む)
+             0x31F0...0x31FF,  // カタカナ拡張
+             0xFF66...0xFF9F:  // 半角カタカナ
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// ルビや圏点が付いている文字の位置。ここには掛けない。
+    private func annotatedIndexes() -> Set<Int> {
+        var indexes = Set<Int>()
+        for ruby in prepared where !ruby.annotation.text.isEmpty {
+            indexes.formUnion(ruby.annotation.range)
+        }
+        return indexes
+    }
+
     // MARK: - 置き場所を決める
 
     /// 組み終わった親文字の脇にルビを置く。
     func runs(context: STContext) -> [STRubyRun] {
         guard !prepared.isEmpty, !context.runs.isEmpty else { return [] }
+        let annotated = annotatedIndexes()
         var runs: [STRubyRun] = []
         for ruby in prepared {
             guard let range = Self.baseRange(ruby.annotation, in: context) else { continue }
+            // 組み直したあとの行割りで掛けを決める
+            let overhang = overhangs(for: ruby, range: range, context: context, annotated: annotated)
             // 親文字が行をまたぐことがあるので行ごとに分け、ルビも親文字の文字数に比例して分ける
             let segments = Self.baseSegments(context: context, range: range)
             var consumed = 0
@@ -170,7 +239,12 @@ struct STRubyLayout {
                 guard share > 0 else { continue }
                 let piece = consumed..<(consumed + share)
                 consumed += share
-                place(ruby, piece: piece, over: segment, context: context, into: &runs)
+                // 掛けは、前は最初の行だけ、後ろは最後の行だけに効く
+                place(
+                    ruby, piece: piece, over: segment, context: context,
+                    overhangBefore: index == 0 ? overhang.before : 0,
+                    overhangAfter: index == segments.count - 1 ? overhang.after : 0,
+                    into: &runs)
             }
         }
         return runs
@@ -182,6 +256,8 @@ struct STRubyLayout {
         piece: Range<Int>,
         over segment: Range<Int>,
         context: STContext,
+        overhangBefore: CGFloat,
+        overhangAfter: CGFloat,
         into runs: inout [STRubyRun]
     ) {
         let pieceRuns = Array(ruby.runs[piece])
@@ -190,9 +266,10 @@ struct STRubyLayout {
         let rubyBounds = Self.bounds(of: pieceRuns, direction: direction)
         let line = context.runs[segment.lowerBound].line
 
-        // 親文字の中央にそろえ、行の端からはみ出さないように寄せる
+        // 親文字 (掛けてよいぶんを足したもの) の中央にそろえ、行の端からはみ出さないように寄せる
         let inlineLimit = direction == .tbRl ? context.renderSize.height : context.renderSize.width
-        var inlineStart = base.inlineMin + (base.inlineLength - rubyBounds.inlineLength) * 0.5
+        let span = base.inlineLength + overhangBefore + overhangAfter
+        var inlineStart = base.inlineMin - overhangBefore + (span - rubyBounds.inlineLength) * 0.5
         if rubyBounds.inlineLength <= inlineLimit {
             inlineStart = min(max(0, inlineStart), inlineLimit - rubyBounds.inlineLength)
         } else {

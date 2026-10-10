@@ -14,10 +14,12 @@ struct RubyTests {
         _ text: String,
         ruby: [STRubyAnnotation],
         size: CGSize = CGSize(width: 400, height: 600),
-        direction: STDirection = .tbRl
+        direction: STDirection = .tbRl,
+        overhang: Bool = true
     ) -> STLabel {
         let label = STLabel(frame: CGRect(origin: .zero, size: size))
         label.isPaged = true
+        label.allowsRubyOverhang = overhang
         label.direction = direction
         label.fontSize = 20
         label.lineHeightScale = 1.9
@@ -92,8 +94,8 @@ struct RubyTests {
     }
 
     @Test func widensTheBaseToFitALongerRuby() {
-        // 親文字 1 文字 (20pt) に 5 文字のルビ (5 * 10 = 50pt) を振る
-        let label = makeLabel("承る", ruby: [STRubyAnnotation(range: 0..<1, text: "うけたまわ")])
+        // 親文字 1 文字 (20pt) に 5 文字のルビ (5 * 10 = 50pt) を振る (掛けは切って広げ方だけを見る)
+        let label = makeLabel("承る", ruby: [STRubyAnnotation(range: 0..<1, text: "うけたまわ")], overhang: false)
         let base = label.context.runs[0]
         // 親文字の占める長さがルビに合わせて広がる
         #expect(abs(base.frame.height - 50) < 1)
@@ -107,8 +109,8 @@ struct RubyTests {
     }
 
     @Test func widenedBaseShiftsTheFollowingText() {
-        let plain = makeLabel("承る", ruby: [])
-        let widened = makeLabel("承る", ruby: [STRubyAnnotation(range: 0..<1, text: "うけたまわ")])
+        let plain = makeLabel("承る", ruby: [], overhang: false)
+        let widened = makeLabel("承る", ruby: [STRubyAnnotation(range: 0..<1, text: "うけたまわ")], overhang: false)
         // 「る」は広がったぶんだけ後ろにずれる
         #expect(abs(widened.context.runs[1].frame.minY - plain.context.runs[1].frame.minY - 30) < 1)
     }
@@ -125,9 +127,66 @@ struct RubyTests {
         let text = "承る"
         let ruby = [STRubyAnnotation(range: 0..<1, text: "うけたまわ")]
         #expect(makeLabel(text, ruby: [], size: CGSize(width: 400, height: 60)).layoutedLineCount == 1)
-        let widened = makeLabel(text, ruby: ruby, size: CGSize(width: 400, height: 60))
+        let widened = makeLabel(text, ruby: ruby, size: CGSize(width: 400, height: 60), overhang: false)
         #expect(widened.layoutedLineCount == 2)
         #expect(widened.context.runs[1].line == 1)
+    }
+
+    // MARK: - ルビの掛け
+
+    @Test func rubyHangsOverAdjacentKana() {
+        // 「承」(20pt) に 5 文字のルビ (50pt)。隣の「る」は仮名なので 1 文字ぶん (10pt) 掛けられる
+        let label = makeLabel("承る", ruby: [STRubyAnnotation(range: 0..<1, text: "うけたまわ")])
+        let base = label.context.runs[0]
+        // 掛けたぶんだけ親文字を広げずに済む (50 - 10 = 40)
+        #expect(abs(base.frame.height - 40) < 1)
+        // ルビは親文字の末尾から 10pt はみ出す
+        let ruby = label.rubyRuns
+        #expect(abs(ruby.map(\.frame.minY).min()! - base.frame.minY) < 1)
+        #expect(abs(ruby.map(\.frame.maxY).max()! - (base.frame.maxY + 10)) < 1)
+    }
+
+    @Test func rubyHangsOverKanaOnBothSides() {
+        let label = makeLabel("は承る", ruby: [STRubyAnnotation(range: 1..<2, text: "うけたまわ")])
+        let base = label.context.runs[1]
+        // 前後に 10pt ずつ掛けられるので、広げるのは 10pt だけ
+        #expect(abs(base.frame.height - 30) < 1)
+        let ruby = label.rubyRuns
+        #expect(abs(ruby.map(\.frame.minY).min()! - (base.frame.minY - 10)) < 1)
+        #expect(abs(ruby.map(\.frame.maxY).max()! - (base.frame.maxY + 10)) < 1)
+    }
+
+    @Test func rubyDoesNotHangOverKanji() {
+        // 隣が漢字なら掛けない (JIS X 4051)
+        let label = makeLabel("承認", ruby: [STRubyAnnotation(range: 0..<1, text: "うけたまわ")])
+        #expect(abs(label.context.runs[0].frame.height - 50) < 1)
+    }
+
+    @Test func rubyDoesNotHangOverAnotherRuby() {
+        // 隣にもルビが付いていたら掛けない
+        let label = makeLabel("承る", ruby: [
+            STRubyAnnotation(range: 0..<1, text: "うけたまわ"),
+            STRubyAnnotation(range: 1..<2, text: "る"),
+        ])
+        #expect(abs(label.context.runs[0].frame.height - 50) < 1)
+    }
+
+    @Test func rubyDoesNotHangAcrossALineBreak() {
+        // 1 行 3 文字。「承」は 2 行目の先頭なので、1 行目の「う」には掛けられない
+        let label = makeLabel("あいう承", ruby: [STRubyAnnotation(range: 3..<4, text: "うけたまわ")],
+                              size: CGSize(width: 400, height: 60))
+        #expect(label.context.runs[3].line != label.context.runs[2].line)
+        // 掛けられないので、ルビの長さぶん親文字を広げる
+        #expect(abs(label.context.runs[3].frame.height - 50) < 1)
+        // ルビは親文字の範囲に収まる
+        let ruby = label.rubyRuns
+        #expect(abs(ruby.map(\.frame.minY).min()! - label.context.runs[3].frame.minY) < 1)
+    }
+
+    @Test func overhangCanBeTurnedOff() {
+        let on = makeLabel("承る", ruby: [STRubyAnnotation(range: 0..<1, text: "うけたまわ")])
+        let off = makeLabel("承る", ruby: [STRubyAnnotation(range: 0..<1, text: "うけたまわ")], overhang: false)
+        #expect(on.context.runs[0].frame.height < off.context.runs[0].frame.height)
     }
 
     @Test func longRubyStaysInsideTheLine() {

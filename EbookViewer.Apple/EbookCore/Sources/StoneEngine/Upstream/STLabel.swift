@@ -219,6 +219,15 @@ open class STLabel: STPlatformView {
         }
     }
 
+    /// ルビが親文字より長いとき、隣の仮名に掛けてよいか (ルビの掛け)。
+    /// false にすると、はみ出すぶんはすべて親文字を広げて収める。
+    open var allowsRubyOverhang: Bool = true {
+        didSet {
+            guard allowsRubyOverhang != oldValue else { return }
+            setNeedsLayout()
+        }
+    }
+
     /// ルビの大きさ (親文字に対する比)。
     open var rubyFontScale: CGFloat = 0.5 {
         didSet {
@@ -422,9 +431,10 @@ open class STLabel: STPlatformView {
         }
 
         // ルビを組む。ルビのほうが長い親文字は、ルビの長さまで広げて組み直す (EbookViewer)
-        let rubyLayout = STRubyLayout(context: context, annotations: annotations, fontScale: rubyFontScale)
-        self.rubyLayout = rubyLayout
+        let rubyLayout = STRubyLayout(
+            context: context, annotations: annotations, fontScale: rubyFontScale, allowsOverhang: allowsRubyOverhang)
         let spacings = rubyLayout.spacings(context: context)
+        self.rubyLayout = rubyLayout
         if !spacings.isEmpty {
             context.spacings = spacings
             STLayout(context: context).layout()
@@ -467,6 +477,7 @@ open class STLabel: STPlatformView {
         var rubyAnnotations: [STRubyAnnotation]
         var emphasisAnnotations: [STEmphasisAnnotation]
         var styleAnnotations: [STStyleAnnotation]
+        var allowsRubyOverhang: Bool
     }
 
     private var layoutSignature: LayoutSignature?
@@ -494,7 +505,8 @@ open class STLabel: STPlatformView {
             rubyFontScale: rubyFontScale,
             rubyAnnotations: rubyAnnotations,
             emphasisAnnotations: emphasisAnnotations,
-            styleAnnotations: styleAnnotations)
+            styleAnnotations: styleAnnotations,
+            allowsRubyOverhang: allowsRubyOverhang)
     }
 
     open override func sizeThatFits(_ size: CGSize) -> CGSize {
