@@ -94,6 +94,9 @@ final class TextViewCoordinator: TextBridge {
             STSizeAnnotation(range: $0.range, scale: $0.scale)
         }
         label.warichuRanges = content.warichu
+        label.boxAnnotations = content.boxes.map {
+            STBoxAnnotation(range: $0.range, style: Self.lineStyle($0.style))
+        }
         label.indentAnnotations = content.indents.map {
             STIndentAnnotation(range: $0.range, head: $0.head, tail: $0.tail.map { CGFloat($0) })
         }
@@ -119,6 +122,7 @@ final class TextViewCoordinator: TextBridge {
         label.sizeAnnotations = []
         label.indentAnnotations = []
         label.warichuRanges = []
+        label.boxAnnotations = []
         label.pageIndex = 0
     }
 

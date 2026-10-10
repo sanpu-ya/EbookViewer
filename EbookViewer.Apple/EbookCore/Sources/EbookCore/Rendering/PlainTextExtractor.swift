@@ -163,6 +163,8 @@ public struct ExtractedText: Sendable {
     public let indents: [IndentAnnotation]
     /// 割り注 (`<span class="warichu">`) にする範囲。
     public let warichu: [Range<Int>]
+    /// 罫囲み (`<span class="keigakomi">`) にする範囲。
+    public let boxes: [LineAnnotation]
     /// `<img>` から取り出した画像。本文には置き場所として全角空白が 1 文字入る。
     public let images: [ImageAnnotation]
 
@@ -177,6 +179,7 @@ public struct ExtractedText: Sendable {
         sizes: [SizeAnnotation] = [],
         indents: [IndentAnnotation] = [],
         warichu: [Range<Int>] = [],
+        boxes: [LineAnnotation] = [],
         images: [ImageAnnotation] = []
     ) {
         self.text = text
@@ -189,6 +192,7 @@ public struct ExtractedText: Sendable {
         self.sizes = sizes
         self.indents = indents
         self.warichu = warichu
+        self.boxes = boxes
         self.images = images
     }
 }
@@ -258,6 +262,8 @@ public enum PlainTextExtractor {
         case trailing(Double)
         /// 割り注。
         case warichu
+        /// 罫囲み。
+        case box(style: LineStyle)
         /// 太字・斜体。
         case style(TextStyle)
     }
@@ -302,6 +308,10 @@ public enum PlainTextExtractor {
         if let scale = sizeScale(forClassName: base) { return .size(scale) }
         if let indent = indentDecoration(forClassName: base) { return indent }
         switch base {
+        case "keigakomi", "border", "kakomi":
+            return .box(style: .solid)
+        case "dashed_border":
+            return .box(style: .dashed)
         case "warichu", "warichu_open", "warichu_close":
             return .warichu
         case "tcy":
@@ -832,6 +842,7 @@ public enum PlainTextExtractor {
         private var sizes: [SizeAnnotation] = []
         private var indents: [IndentAnnotation] = []
         private var warichu: [Range<Int>] = []
+        private var boxes: [LineAnnotation] = []
         /// 画像の (置き場所, パス, alt)。置き場所は本文を組み立て終わってから確定する。
         private var images: [(offset: Int, source: String, alt: String)] = []
         private var ruby: [RubyAnnotation] = []
@@ -994,6 +1005,8 @@ public enum PlainTextExtractor {
                 indents.append(IndentAnnotation(range: range, tail: tail))
             case .warichu:
                 warichu.append(range)
+            case .box(let style):
+                boxes.append(LineAnnotation(range: range, style: style))
             }
         }
 
@@ -1209,11 +1222,15 @@ public enum PlainTextExtractor {
                 return IndentAnnotation(range: range, head: annotation.head, tail: annotation.tail)
             }
             let shiftedWarichu = warichu.compactMap { shift($0, by: leading, limit: length) }
+            let shiftedBoxes = boxes.compactMap { annotation -> LineAnnotation? in
+                guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
+                return LineAnnotation(range: range, style: annotation.style)
+            }
             return ExtractedText(
                 text: text, anchors: adjusted, ruby: shifted, styles: shiftedStyles,
                 emphasis: shiftedEmphasis, lines: shiftedLines, tateChuYoko: shiftedTateChuYoko,
                 sizes: shiftedSizes, indents: shiftedIndents, warichu: shiftedWarichu,
-                images: shiftedImages)
+                boxes: shiftedBoxes, images: shiftedImages)
         }
     }
 }

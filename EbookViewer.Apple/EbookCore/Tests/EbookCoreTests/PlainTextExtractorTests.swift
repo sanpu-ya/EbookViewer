@@ -338,6 +338,15 @@ struct PlainTextExtractorTests {
         #expect(indent.head == 2)
     }
 
+    @Test func takesBoxFromClass() {
+        #expect(extract("<p><span class=\"keigakomi\">囲み</span></p>").boxes
+            == [LineAnnotation(range: 0..<2, style: .solid, position: .underline)])
+        #expect(extract("<p><span class=\"dashed_border\">囲み</span></p>").boxes
+            == [LineAnnotation(range: 0..<2, style: .dashed, position: .underline)])
+        // 罫囲みは線ではないので lines には出さない
+        #expect(extract("<p><span class=\"keigakomi\">囲み</span></p>").lines.isEmpty)
+    }
+
     @Test func takesWarichuFromClass() {
         let r = extract("<p>本文<span class=\"warichu\">これは注</span>に戻る</p>")
         #expect(r.text == "本文これは注に戻る")

@@ -219,6 +219,14 @@ open class STLabel: STPlatformView {
         }
     }
 
+    /// 罫囲みにする範囲。文字のまわりを罫で囲む。
+    open var boxAnnotations: [STBoxAnnotation] = [] {
+        didSet {
+            guard boxAnnotations != oldValue else { return }
+            setNeedsLayout()
+        }
+    }
+
     /// 割り注にする範囲。本文 1 行ぶんの幅の中に、半分の大きさで 2 行に組む。
     open var warichuRanges: [Range<Int>] = [] {
         didSet {
@@ -293,10 +301,22 @@ open class STLabel: STPlatformView {
         let ruby = annotations.contains { $0.position == position && !$0.text.isEmpty }
             ? context.adjustFontSize * rubyFontScale
             : 0
+        // 罫囲みは文字の両側に広がる
+        if !boxAnnotations.isEmpty { return max(ruby, boxExtent) }
         // 傍線のぶん。引く側は向きと種類で決まる
         let needsLine = lineAnnotations.contains { $0.position.side(for: context.direction) == position }
         guard needsLine else { return ruby }
         return max(ruby, lineExtent)
+    }
+
+    /// 罫囲みのために文字の脇へ空けておく幅 (罫の太さと、文字との間の空き)。
+    private var boxExtent: CGFloat {
+        boxPadding + lineThickness * 2
+    }
+
+    /// 罫と文字の間の空き。
+    private var boxPadding: CGFloat {
+        (context.adjustFontSize * 0.2).rounded()
     }
 
     /// 行の両脇にルビのために空けておく幅の合計。
@@ -664,6 +684,7 @@ open class STLabel: STPlatformView {
         var emphasisAnnotations: [STEmphasisAnnotation]
         var styleAnnotations: [STStyleAnnotation]
         var lineAnnotations: [STLineAnnotation]
+        var boxAnnotations: [STBoxAnnotation]
         var sizeAnnotations: [STSizeAnnotation]
         var indentAnnotations: [STIndentAnnotation]
         var warichuRanges: [Range<Int>]
@@ -699,6 +720,7 @@ open class STLabel: STPlatformView {
             emphasisAnnotations: emphasisAnnotations,
             styleAnnotations: styleAnnotations,
             lineAnnotations: lineAnnotations,
+            boxAnnotations: boxAnnotations,
             sizeAnnotations: sizeAnnotations,
             indentAnnotations: indentAnnotations,
             warichuRanges: warichuRanges,
@@ -1012,6 +1034,35 @@ open class STLabel: STPlatformView {
         }
     }
 
+    /// 罫囲みを描く。ページに出ている文字のまわりだけを囲む。
+    private func drawBoxes(_ dirtyRect: CGRect) {
+        guard !boxAnnotations.isEmpty, let cgContext = UIGraphicsGetCurrentContext() else { return }
+        cgContext.setStrokeColor(context.textColor.cgColor)
+        let lineRange: Range<Int>? = isPaged ? pageLineRange : nil
+        let translation = contentTranslation
+        let padding = boxPadding
+
+        for annotation in boxAnnotations {
+            let lower = max(0, annotation.range.lowerBound)
+            let upper = min(context.runs.count, annotation.range.upperBound)
+            guard lower < upper else { continue }
+            var box: CGRect = .null
+            for index in lower..<upper {
+                let run = context.runs[index]
+                guard !run.char.isNewline else { continue }
+                if let lineRange {
+                    guard lineRange.contains(run.line) else { continue }
+                } else if run.isHidden {
+                    continue
+                }
+                box = box.isNull ? run.frame : box.union(run.frame)
+            }
+            guard !box.isNull else { continue }
+            let rect = box.insetBy(dx: -padding, dy: -padding).offsetBy(dx: translation.x, dy: translation.y)
+            cgContext.strokeTextBox(rect, thickness: lineThickness, style: annotation.style)
+        }
+    }
+
     open override func draw(_ dirtyRect: CGRect) {
         // 挿絵のページは画像だけを描く
         if isPaged, case .image(let index) = currentPage, index < imageAnnotations.count {
@@ -1020,6 +1071,7 @@ open class STLabel: STPlatformView {
         }
 
         // Draw
+        drawBoxes(dirtyRect)
         drawLines(dirtyRect)
         drawInlineImages(dirtyRect)
         drawGlyphs(dirtyRect)

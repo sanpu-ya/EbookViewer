@@ -19,6 +19,7 @@ struct StyleTests {
         sizes: [STSizeAnnotation] = [],
         indents: [STIndentAnnotation] = [],
         warichu: [Range<Int>] = [],
+        boxes: [STBoxAnnotation] = [],
         emphasis: [STEmphasisAnnotation] = [],
         ruby: [STRubyAnnotation] = [],
         size: CGSize = CGSize(width: 400, height: 600),
@@ -39,6 +40,7 @@ struct StyleTests {
         label.sizeAnnotations = sizes
         label.indentAnnotations = indents
         label.warichuRanges = warichu
+        label.boxAnnotations = boxes
         label.emphasisAnnotations = emphasis
         label.rubyAnnotations = ruby
         label.layoutSubviews()
@@ -232,6 +234,60 @@ struct StyleTests {
         let label = makeLabel("大事", emphasis: [STEmphasisAnnotation(range: 0..<2, position: .under)])
         let base = label.context.runs[0..<2]
         #expect(label.rubyRuns.allSatisfy { $0.frame.maxX <= base.map(\.frame.minX).min()! + 0.5 })
+    }
+
+    // MARK: - 罫囲み
+
+    @Test func boxSurroundsTheCharacters() {
+        let size = CGSize(width: 200, height: 200)
+        let label = makeLabel("前囲み後", boxes: [STBoxAnnotation(range: 1..<3)], size: size)
+        let pixels = render(label, size: size)
+        let width = Int(size.width)
+
+        /// その行 (文字が進む向きの範囲) に墨がある x の幅。
+        func inkWidth(rows: Range<Int>) -> Int {
+            var minX = width
+            var maxX = -1
+            for row in rows where row >= 0 && row < Int(size.height) {
+                for column in 0..<width where pixels[(row * width + column) * 4 + 3] > 0 {
+                    minX = min(minX, column)
+                    maxX = max(maxX, column)
+                }
+            }
+            return maxX < minX ? 0 : maxX - minX + 1
+        }
+
+        // 囲んだ文字のところは、罫のぶんだけ文字より横に広がる
+        let boxed = label.context.runs[1].frame
+        let plain = label.context.runs[3].frame
+        let boxedWidth = inkWidth(rows: Int(boxed.minY + 3)..<Int(boxed.maxY - 3))
+        // 囲みの罫は文字の前後にも少しはみ出すので、そこを避けて見る
+        let plainWidth = inkWidth(rows: Int(plain.minY + 8)..<Int(plain.maxY - 2))
+        #expect(boxedWidth > plainWidth + 4)
+        // 囲みの外にある文字は、文字の幅のまま
+        #expect(plainWidth <= Int(plain.width) + 2)
+    }
+
+    @Test func boxReservesSpaceOnBothSides() {
+        let plain = makeLabel("囲み")
+        let boxed = makeLabel("囲み", boxes: [STBoxAnnotation(range: 0..<2)])
+        #expect(plain.rubyExtent == 0)
+        #expect(boxed.rubyExtent > 0)
+        // 1 ページに入る行数は増えない
+        #expect(boxed.linesPerPage <= plain.linesPerPage)
+    }
+
+    @Test func boxStylesDrawDifferently() {
+        let size = CGSize(width: 200, height: 200)
+        var inks: [STLineStyle: Int] = [:]
+        for style in [STLineStyle.solid, .dashed, .dotted, .double] {
+            let label = makeLabel("囲み", boxes: [STBoxAnnotation(range: 0..<2, style: style)], size: size)
+            inks[style] = render(label, size: size).lazy.filter { $0 > 0 }.count
+        }
+        let plain = render(makeLabel("囲み", size: size), size: size).lazy.filter { $0 > 0 }.count
+        for (_, ink) in inks { #expect(ink > plain) }
+        #expect(inks[.dashed]! < inks[.solid]!)
+        #expect(inks[.double]! > inks[.solid]!)
     }
 
     // MARK: - 割り注

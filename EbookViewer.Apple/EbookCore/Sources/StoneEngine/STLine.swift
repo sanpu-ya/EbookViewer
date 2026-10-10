@@ -61,7 +61,36 @@ public struct STLineAnnotation: Equatable, Sendable {
     }
 }
 
+/// 罫囲みにする範囲 (青空文庫の「罫囲み」)。
+public struct STBoxAnnotation: Equatable, Sendable {
+    /// 範囲 (STLabel.text の Character 単位、0 始まり)。
+    public var range: Range<Int>
+    public var style: STLineStyle
+
+    public init(range: Range<Int>, style: STLineStyle = .solid) {
+        self.range = range
+        self.style = style
+    }
+}
+
 extension CGContext {
+    /// 文字のまわりに罫を引く。
+    func strokeTextBox(_ rect: CGRect, thickness: CGFloat, style: STLineStyle) {
+        saveGState()
+        defer { restoreGState() }
+        setLineWidth(thickness)
+        switch style {
+        case .dotted: setLineDash(phase: 0, lengths: [thickness, thickness])
+        case .dashed: setLineDash(phase: 0, lengths: [thickness * 3, thickness * 2])
+        default: break
+        }
+        stroke(rect.insetBy(dx: thickness * 0.5, dy: thickness * 0.5))
+        // 二重罫は内側にもう 1 本
+        if style == .double {
+            stroke(rect.insetBy(dx: thickness * 2.5, dy: thickness * 2.5))
+        }
+    }
+
     /// 線を 1 本引く。`style` に応じて二重線・点線・破線・波線にする。
     ///
     /// - Parameters:
