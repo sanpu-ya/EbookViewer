@@ -146,6 +146,15 @@ open class STContext {
         return shifts[runId]
     }
     
+    // Text orientation (EbookViewer)
+    /// 文字ごとの、縦組みでの向き。添字は run の添字。空なら文字種にまかせる。
+    public var orientations: [STTextOrientation] = []
+    
+    /// runId の run の、縦組みでの向き。
+    public func orientation(at runId: Int) -> STTextOrientation {
+        runId >= 0 && runId < orientations.count ? orientations[runId] : .mixed
+    }
+    
     // Tate chu yoko (EbookViewer)
     /// 数字でなくても縦中横にする run の添字 (青空文庫の「縦組み中で横に並んだ文字」)。
     public var forcedTateChuYoko: Set<Int> = []
@@ -640,11 +649,18 @@ open class STContext {
     //--------------------------------------------------------------//
     
     public func isClockwise(run: STRun) -> Bool {
-        // Check script
-        guard !fontManager.script(fontId: run.fontId).notNeedsToClockwiseInTbRl else { return false }
-        
         // Check direction
         guard direction == .tbRl else { return false }
+        
+        // 向きが指定されていればそれに従う (CSS の text-orientation) (EbookViewer)
+        switch run.orientation {
+        case .upright: return false
+        case .sideways: return true
+        case .mixed: break
+        }
+        
+        // Check script
+        guard !fontManager.script(fontId: run.fontId).notNeedsToClockwiseInTbRl else { return false }
         
         // Check tate chu yoko
         return !isTateChuYoko(run: run)

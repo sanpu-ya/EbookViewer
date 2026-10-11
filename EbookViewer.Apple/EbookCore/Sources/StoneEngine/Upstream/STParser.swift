@@ -40,6 +40,7 @@ class STParser {
         // Get style and size of this character (EbookViewer)
         let style = context.style(at: runs.count)
         let fontSize = context.adjustFontSize * context.sizeScale(at: runs.count)
+        let orientation = context.orientation(at: runs.count)
         
         // 異体字セレクタのような、それ自体は字を持たない文字 (EbookViewer)。
         //
@@ -72,8 +73,9 @@ class STParser {
         var glyph: CGGlyph = 0
         CTFontGetGlyphsForCharacters(ctFont, &buf, &glyph, char.utf16.count)
         
-        // For Japanese TbRl
-        if char.unicodeScalars.first?.script == .japanese, context.direction == .tbRl {
+        // For Japanese TbRl (EbookViewer: 倒す指定のときは縦書き用の字形に替えない)
+        if char.unicodeScalars.first?.script == .japanese, context.direction == .tbRl,
+            orientation != .sideways {
             // Get vertical glyphs
             let fontName = CTFontCopyFullName(ctFont) as String
             let vertGlyph = STTextVerticalSubstitutionGlyphWithGlyph(fontName: fontName, glyph: glyph)
@@ -92,7 +94,7 @@ class STParser {
         let punctuation = STPunctuation.valueOf(charatcter: char)
         
         // Create run
-        return STRun(tokenId: tokenId, tokenRunIndex: tokenRunIndex, fontId: fontId, style: style, fontSize: fontSize, char: char, punctuation: punctuation, glyph: glyph, advance: advance, boundingRect: boundingRect, position: .zero, frame: .zero, visibility: .visible, line: 0)
+        return STRun(tokenId: tokenId, tokenRunIndex: tokenRunIndex, fontId: fontId, style: style, orientation: orientation, fontSize: fontSize, char: char, punctuation: punctuation, glyph: glyph, advance: advance, boundingRect: boundingRect, position: .zero, frame: .zero, visibility: .visible, line: 0)
     }
     
     private func appendRuns(string: String, tokenId: Int) {

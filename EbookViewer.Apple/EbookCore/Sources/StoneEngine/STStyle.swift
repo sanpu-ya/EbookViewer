@@ -101,6 +101,19 @@ public struct STShiftAnnotation: Equatable, Sendable {
     }
 }
 
+/// 縦組みでの文字の向きを決める範囲 (CSS の text-orientation)。
+public struct STOrientationAnnotation: Equatable, Sendable {
+    /// 範囲 (STLabel.text の Character 単位、0 始まり)。
+    public var range: Range<Int>
+    /// `.upright` は倒さず正立、`.sideways` はかならず倒す。
+    public var orientation: STTextOrientation
+
+    public init(range: Range<Int>, orientation: STTextOrientation) {
+        self.range = range
+        self.orientation = orientation
+    }
+}
+
 /// 圏点 (傍点) を打つ範囲。
 public struct STEmphasisAnnotation: Equatable, Sendable {
     /// 範囲 (STLabel.text の Character 単位、0 始まり)。

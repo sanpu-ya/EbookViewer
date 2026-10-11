@@ -16,6 +16,7 @@ struct StyleTests {
         styles: [STStyleAnnotation] = [],
         lines: [STLineAnnotation] = [],
         tateChuYoko: [Range<Int>] = [],
+        orientations: [STOrientationAnnotation] = [],
         sizes: [STSizeAnnotation] = [],
         shifts: [STShiftAnnotation] = [],
         indents: [STIndentAnnotation] = [],
@@ -39,6 +40,7 @@ struct StyleTests {
         label.styleAnnotations = styles
         label.lineAnnotations = lines
         label.tateChuYokoRanges = tateChuYoko
+        label.orientationAnnotations = orientations
         label.sizeAnnotations = sizes
         label.shiftAnnotations = shifts
         label.indentAnnotations = indents
@@ -717,6 +719,45 @@ struct StyleTests {
         let label = makeLabel(
             "昭和30年", tateChuYoko: [2..<4], size: CGSize(width: 400, height: 300), direction: .lrTb)
         #expect(!label.context.isTateChuYoko(run: label.context.runs[2]))
+    }
+
+    // MARK: - 文字の向き
+
+    @Test func uprightKeepsLatinStandingInVerticalText() {
+        // 欧文はふつう縦組みで倒れるが、upright を指定すると正立する
+        let plain = makeLabel("あAい")
+        #expect(plain.context.isClockwise(run: plain.context.runs[1]))
+        let upright = makeLabel(
+            "あAい", orientations: [STOrientationAnnotation(range: 1..<2, orientation: .upright)])
+        #expect(!upright.context.isClockwise(run: upright.context.runs[1]))
+    }
+
+    @Test func uprightCentersANarrowGlyphInTheLine() {
+        // 半角の文字でも 1 文字ぶんの枠の中央にそろえる
+        let label = makeLabel(
+            "あAい", orientations: [STOrientationAnnotation(range: 1..<2, orientation: .upright)])
+        let cell = label.context.runs[0].frame
+        let narrow = label.context.runs[1].frame
+        #expect(narrow.width < cell.width)
+        #expect(abs(narrow.midX - cell.midX) < 0.5)
+    }
+
+    @Test func sidewaysLaysJapaneseDown() {
+        // 和文はふつう正立するが、sideways を指定すると倒れる
+        let plain = makeLabel("「あ」")
+        #expect(!plain.context.isClockwise(run: plain.context.runs[0]))
+        let sideways = makeLabel(
+            "「あ」", orientations: [STOrientationAnnotation(range: 0..<1, orientation: .sideways)])
+        #expect(sideways.context.isClockwise(run: sideways.context.runs[0]))
+        // 倒すときは縦書き用の字形 (﹁) に替えない
+        #expect(sideways.context.runs[0].glyph != plain.context.runs[0].glyph)
+    }
+
+    @Test func orientationDoesNothingInHorizontalWriting() {
+        let label = makeLabel(
+            "あAい", orientations: [STOrientationAnnotation(range: 0..<1, orientation: .sideways)],
+            size: CGSize(width: 400, height: 300), direction: .lrTb)
+        #expect(!label.context.isClockwise(run: label.context.runs[0]))
     }
 
     // MARK: - 圏点

@@ -153,7 +153,15 @@ class STLayout {
         
         // この文字の大きさと、1 文字ぶんの枠の中で中央にそろえるためのずれ (EbookViewer)
         let size = context.runs[runId].fontSize
-        let centering = (context.adjustFontSize - size) * 0.5
+        var centering = (context.adjustFontSize - size) * 0.5
+        // 正立させる指定の文字は、半角でも 1 文字ぶんの枠の中央にそろえる
+        // (電書連 EPUB 3 制作ガイド別紙「今後の RS に期待する項目」)
+        if context.runs[runId].orientation == .upright {
+            let advance = context.runs[runId].advance.width
+            if advance > 0, advance < context.adjustFontSize {
+                centering = (context.adjustFontSize - advance) * 0.5
+            }
+        }
         
         // For new line
         if context.runs[runId].char.isNewline {

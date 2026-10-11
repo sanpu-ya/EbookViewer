@@ -502,12 +502,24 @@ public enum STRunVisibility: Int, CaseIterable {
     case ellipsis
 }
 
+/// 縦組みでの文字の向き (CSS の text-orientation)。EbookViewer の追加。
+public enum STTextOrientation: Sendable, Equatable {
+    /// 文字種にまかせる (欧文は倒し、和文は正立させる)。
+    case mixed
+    /// 倒さず正立させる。
+    case upright
+    /// かならず倒す。
+    case sideways
+}
+
 public struct STRun {
     public var tokenId: Int
     public var tokenRunIndex: Int
     public var fontId: Int
     /// 字面の変化 (太字・斜体)。EbookViewer の追加。
     public var style: STTextStyle = []
+    /// 縦組みでの文字の向き。EbookViewer の追加。
+    public var orientation: STTextOrientation = .mixed
     /// この文字の大きさ。ふつうは context.adjustFontSize と同じ。EbookViewer の追加。
     public var fontSize: CGFloat = 0
     public var char: Character

@@ -57,6 +57,18 @@ body img, body figure, body svg {
   break-after: column !important;
 }
 
+/* 縦組みでの文字の向き (電書連の class) */
+.upright {
+  -webkit-text-orientation: upright;
+  -epub-text-orientation: upright;
+  text-orientation: upright;
+}
+.sideways {
+  -webkit-text-orientation: sideways;
+  -epub-text-orientation: sideways;
+  text-orientation: sideways;
+}
+
 /* 左右中央 (青空文庫の注記から変換された class) */
 .chuuou, .chuo, .center, .centered {
   text-align: center;

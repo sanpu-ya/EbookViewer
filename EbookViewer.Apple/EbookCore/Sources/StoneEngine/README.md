@@ -246,6 +246,11 @@ upstream は 1 つの文字サイズで組みますが、文字ごとに大き�
   `overline` (その反対 = 左傍線)、`strikethrough` (文字の中央) の 3 つ。線のぶんの空きも
   行の脇に取り分けます。
 
+縦組みでの文字の向き (`orientationAnnotations`) は、`STRun.orientation` に持たせて
+`isClockwise(run:)` が文字種より先に見ます。`.upright` なら倒さず、`.sideways` ならかならず倒します。
+倒す指定のときは縦書き用の字形にも替えません。正立させる指定の文字は、半角でも 1 文字ぶんの枠の
+中央にそろえます (電書連 EPUB 3 制作ガイド別紙「今後の RS に期待する項目」)。
+
 縦中横 (`tateChuYokoRanges`) は、`STContext.forcedTateChuYoko` に入れた run を
 `isTateChuYoko(run:)` が数字でなくても縦中横として扱うようにしたものです。stone_engine は
 字を詰めないので、1 文字ぶんの 1.5 倍に収まらないまとまりは横に並べません。

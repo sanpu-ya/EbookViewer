@@ -90,6 +90,10 @@ final class TextViewCoordinator: TextBridge {
             return STStyleAnnotation(range: $0.range, style: style, removes: $0.removes)
         }
         label.tateChuYokoRanges = content.tateChuYoko
+        label.orientationAnnotations = content.orientations.map {
+            STOrientationAnnotation(
+                range: $0.range, orientation: $0.orientation == .upright ? .upright : .sideways)
+        }
         label.horizontalRanges = content.horizontal
         label.pageBreakOffsets = content.pageBreaks
         label.sizeAnnotations = content.sizes.map {
@@ -127,6 +131,7 @@ final class TextViewCoordinator: TextBridge {
         label.styleAnnotations = []
         label.lineAnnotations = []
         label.tateChuYokoRanges = []
+        label.orientationAnnotations = []
         label.horizontalRanges = []
         label.pageBreakOffsets = []
         label.sizeAnnotations = []

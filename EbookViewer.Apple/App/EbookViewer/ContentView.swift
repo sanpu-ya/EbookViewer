@@ -223,6 +223,14 @@ struct ContentView: View {
             .help(model.isComic ? "Show Pages (⌘T)" : "Show Table of Contents (⌘T)")
         }
         ToolbarItemGroup(placement: .primaryAction) {
+            if !model.isComic, model.canGoBack || model.canGoForward {
+                Button { model.goBackInHistory() } label: { Label("Back", systemImage: "arrow.uturn.backward") }
+                    .help("Back (⌘⌥[)")
+                    .disabled(!model.canGoBack)
+                Button { model.goForwardInHistory() } label: { Label("Forward", systemImage: "arrow.uturn.forward") }
+                    .help("Forward (⌘⌥])")
+                    .disabled(!model.canGoForward)
+            }
             Button { model.prevPage() } label: { Label("Previous", systemImage: "chevron.backward") }
                 .help("Previous Page")
                 .disabled(!model.hasContent)
@@ -253,6 +261,10 @@ struct ContentView: View {
         ToolbarItemGroup(placement: .topBarLeading) {
             Button { model.setTocOpen(!model.tocOpen) } label: {
                 Label(model.isComic ? "Pages" : "Contents", systemImage: model.isComic ? "square.grid.2x2" : "list.bullet")
+            }
+            // リンクや目次で飛んだあとだけ出す
+            if !model.isComic, model.canGoBack {
+                Button { model.goBackInHistory() } label: { Label("Back", systemImage: "arrow.uturn.backward") }
             }
         }
         ToolbarItemGroup(placement: .topBarTrailing) {

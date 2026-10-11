@@ -76,6 +76,10 @@ final class ReaderModel: BookContentProvider {
     private(set) var book: BookDocument?
     var bookURL: URL?
     private(set) var spineIndex = -1
+    /// リンクや目次で飛ぶ前の場所 (「戻る」で帰るため)。
+    private var backStack: [ReadingPosition] = []
+    /// 「戻る」で戻ったあと、「進む」で行ける場所。
+    private var forwardStack: [ReadingPosition] = []
     private(set) var page = 0
     private(set) var pages = 1
     private(set) var tocItems: [TocItem] = []
@@ -260,6 +264,8 @@ final class ReaderModel: BookContentProvider {
         pages = 1
         tocItems = []
         selectedTocId = nil
+        backStack = []
+        forwardStack = []
         if let blank = URL(string: "about:blank") { web?.navigate(to: blank) }
     }
 
@@ -357,6 +363,8 @@ final class ReaderModel: BookContentProvider {
 
     func navigate(toPath path: String?, fragment: String?) {
         guard let book else { return }
+        // 飛ぶ前の場所を覚えておき、「戻る」で帰れるようにする
+        rememberPositionForHistory()
         let index = path == nil ? spineIndex : book.findSpineIndex(path!)
         if index < 0 {
             // spine に無いドキュメント (脚注ファイルなど) でも本文リソースなら表示する
@@ -400,6 +408,65 @@ final class ReaderModel: BookContentProvider {
         #else
         UIApplication.shared.open(url)
         #endif
+    }
+
+    // MARK: - リンクの履歴
+
+    /// 本の中のどこを読んでいたか。
+    struct ReadingPosition: Equatable {
+        var spineIndex: Int
+        var page: Int
+    }
+
+    /// 覚えておく履歴の数。
+    private static let historyLimit = 50
+
+    var canGoBack: Bool { !backStack.isEmpty }
+    var canGoForward: Bool { !forwardStack.isEmpty }
+
+    /// 目次やリンクで飛ぶ前に、いまの場所を覚えておく。
+    ///
+    /// 本文から注釈へ飛ぶように、同じ所へいくつもの場所からリンクが張られていると、
+    /// 本の側で戻り先を用意するのが難しい。ブラウザーの「戻る」と同じしくみを用意する。
+    private func rememberPositionForHistory() {
+        guard book != nil, spineIndex >= 0 else { return }
+        let here = ReadingPosition(spineIndex: spineIndex, page: page)
+        guard backStack.last != here else { return }
+        backStack.append(here)
+        if backStack.count > Self.historyLimit { backStack.removeFirst() }
+        // 新しく飛んだら、それより先の履歴は捨てる (ブラウザーと同じ)
+        forwardStack.removeAll()
+    }
+
+    func goBackInHistory() {
+        guard let target = backStack.popLast() else { return }
+        forwardStack.append(ReadingPosition(spineIndex: spineIndex, page: page))
+        restore(target)
+    }
+
+    func goForwardInHistory() {
+        guard let target = forwardStack.popLast() else { return }
+        backStack.append(ReadingPosition(spineIndex: spineIndex, page: page))
+        restore(target)
+    }
+
+    private func restore(_ position: ReadingPosition) {
+        if position.spineIndex == spineIndex {
+            showPage(position.page)
+            focusContent()
+            return
+        }
+        goToSpine(position.spineIndex, initial: .page(position.page))
+    }
+
+    /// いまの章の中でページを移る。
+    private func showPage(_ index: Int) {
+        if usesStoneEngine { text?.goTo(page: index) }
+        else { web?.evaluate("window.__ev && window.__ev.goto(\(index))") }
+    }
+
+    private func focusContent() {
+        if usesStoneEngine { text?.focus() } else { web?.focus() }
     }
 
     func selectToc(_ item: TocItem) {

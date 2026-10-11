@@ -42,6 +42,26 @@
         }
       }
     },
+    "Back": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "戻る"
+          }
+        }
+      }
+    },
+    "Back (⌘⌥[)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "戻る (⌘⌥[)"
+          }
+        }
+      }
+    },
     "Back One Page": {
       "localizations": {
         "ja": {
@@ -288,6 +308,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "フォント"
+          }
+        }
+      }
+    },
+    "Forward": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "進む"
+          }
+        }
+      }
+    },
+    "Forward (⌘⌥])": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "進む (⌘⌥])"
           }
         }
       }

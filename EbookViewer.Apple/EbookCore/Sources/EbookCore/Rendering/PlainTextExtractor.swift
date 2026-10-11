@@ -123,6 +123,26 @@ public struct ShiftAnnotation: Equatable, Sendable {
     }
 }
 
+/// 縦組みでの文字の向き (CSS の text-orientation)。
+public enum TextOrientation: Sendable, Equatable {
+    /// 倒さず正立させる。
+    case upright
+    /// かならず倒す。
+    case sideways
+}
+
+/// 縦組みでの文字の向きを決める範囲。
+public struct OrientationAnnotation: Equatable, Sendable {
+    /// 範囲 (`ExtractedText.text` の Character 単位、0 始まり)。
+    public let range: Range<Int>
+    public let orientation: TextOrientation
+
+    public init(range: Range<Int>, orientation: TextOrientation) {
+        self.range = range
+        self.orientation = orientation
+    }
+}
+
 /// 文字の大きさを変える範囲。
 public struct SizeAnnotation: Equatable, Sendable {
     /// 範囲 (`ExtractedText.text` の Character 単位、0 始まり)。
@@ -188,6 +208,8 @@ public struct ExtractedText: Sendable {
     public let lines: [LineAnnotation]
     /// 縦中横 (`<span class="tcy">`) にする範囲。
     public let tateChuYoko: [Range<Int>]
+    /// 縦組みでの文字の向きを決める範囲 (`text-orientation`)。
+    public let orientations: [OrientationAnnotation]
     /// 見出しや文字サイズの注記から取り出した、文字の大きさ。
     public let sizes: [SizeAnnotation]
     /// 上付き・下付きの注記から取り出した、文字を寄せる側。
@@ -213,6 +235,7 @@ public struct ExtractedText: Sendable {
         emphasis: [EmphasisAnnotation] = [],
         lines: [LineAnnotation] = [],
         tateChuYoko: [Range<Int>] = [],
+        orientations: [OrientationAnnotation] = [],
         sizes: [SizeAnnotation] = [],
         shifts: [ShiftAnnotation] = [],
         indents: [IndentAnnotation] = [],
@@ -229,6 +252,7 @@ public struct ExtractedText: Sendable {
         self.emphasis = emphasis
         self.lines = lines
         self.tateChuYoko = tateChuYoko
+        self.orientations = orientations
         self.sizes = sizes
         self.shifts = shifts
         self.indents = indents
@@ -337,6 +361,8 @@ public enum PlainTextExtractor {
         case line(style: LineStyle, position: LinePosition)
         /// 縦中横。
         case tateChuYoko
+        /// 縦組みでの文字の向き。
+        case orientation(TextOrientation)
         /// 文字の大きさ (ふつうの文字に対する比)。
         case size(Double)
         /// 上付き・下付き (小さくした文字を寄せる側)。
@@ -433,6 +459,8 @@ public enum PlainTextExtractor {
         case "kunten-okuri": return [.size(0.67), .shift(.over)]
         case "kogaki": return [.size(0.75)]
         case "upright-1": return [.tateChuYoko]
+        case "upright": return [.orientation(.upright)]
+        case "sideways": return [.orientation(.sideways)]
         case "align-center", "block-align-center": return [.centered]
         case "align-end", "align-right": return [.trailing(0)]
         default: return []
@@ -705,6 +733,17 @@ public enum PlainTextExtractor {
         let lowered = style.lowercased()
         guard let range = lowered.range(of: "text-align") else { return false }
         return lowered[range.upperBound...].drop { $0 == ":" || $0 == " " }.hasPrefix("center")
+    }
+
+    /// `style="text-orientation: upright"` から、縦組みでの文字の向きを読む。
+    /// ベンダー接頭辞つき (`-epub-` / `-webkit-`) でも読む。
+    static func orientation(forStyle style: String) -> TextOrientation? {
+        let lowered = style.lowercased()
+        guard let range = lowered.range(of: "text-orientation") else { return nil }
+        let value = lowered[range.upperBound...].drop { $0 == ":" || $0 == " " }
+        if value.hasPrefix("upright") { return .upright }
+        if value.hasPrefix("sideways") { return .sideways }
+        return nil
     }
 
     /// `style="writing-mode: horizontal-tb"` から、縦組みの中の横組みを読む。
@@ -1160,6 +1199,7 @@ public enum PlainTextExtractor {
         private var emphasis: [EmphasisAnnotation] = []
         private var lines: [LineAnnotation] = []
         private var tateChuYoko: [Range<Int>] = []
+        private var orientations: [OrientationAnnotation] = []
         private var sizes: [SizeAnnotation] = []
         private var shifts: [ShiftAnnotation] = []
         private var indents: [IndentAnnotation] = []
@@ -1299,6 +1339,10 @@ public enum PlainTextExtractor {
             if PlainTextExtractor.isHorizontal(forStyle: open.style), !decorations.contains(.horizontal) {
                 decorations.append(.horizontal)
             }
+            if let orientation = PlainTextExtractor.orientation(forStyle: open.style) {
+                decorations.removeAll { if case .orientation = $0 { return true } else { return false } }
+                decorations.append(.orientation(orientation))
+            }
             if !decorations.isEmpty {
                 for decoration in decorations { apply(decoration, to: range, tag: open.tag) }
                 return
@@ -1348,6 +1392,8 @@ public enum PlainTextExtractor {
                 styles.append(StyleAnnotation(range: range, style: style, removes: true))
             case .tateChuYoko:
                 tateChuYoko.append(range)
+            case .orientation(let orientation):
+                orientations.append(OrientationAnnotation(range: range, orientation: orientation))
             case .size(let scale):
                 sizes.append(SizeAnnotation(range: range, scale: scale))
             case .shift(let position):
@@ -1599,6 +1645,10 @@ public enum PlainTextExtractor {
                 return ImageAnnotation(offset: offset, source: image.source, alt: image.alt, isBlock: isAlone)
             }
             let shiftedTateChuYoko = tateChuYoko.compactMap { shift($0, by: leading, limit: length) }
+            let shiftedOrientations = orientations.compactMap { annotation -> OrientationAnnotation? in
+                guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
+                return OrientationAnnotation(range: range, orientation: annotation.orientation)
+            }
             let shiftedSizes = sizes.compactMap { annotation -> SizeAnnotation? in
                 guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
                 return SizeAnnotation(range: range, scale: annotation.scale)
@@ -1626,6 +1676,7 @@ public enum PlainTextExtractor {
             return ExtractedText(
                 text: text, anchors: adjusted, ruby: shifted, styles: shiftedStyles,
                 emphasis: shiftedEmphasis, lines: shiftedLines, tateChuYoko: shiftedTateChuYoko,
+                orientations: shiftedOrientations,
                 sizes: shiftedSizes, shifts: shiftedShifts, indents: shiftedIndents, warichu: shiftedWarichu,
                 boxes: shiftedBoxes, horizontal: shiftedHorizontal, pageBreaks: shiftedPageBreaks,
                 images: shiftedImages)

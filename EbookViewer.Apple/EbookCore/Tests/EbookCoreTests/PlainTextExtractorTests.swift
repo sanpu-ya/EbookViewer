@@ -488,6 +488,21 @@ struct PlainTextExtractorTests {
             == [ShiftAnnotation(range: 1..<2, position: .over)])
     }
 
+    @Test func takesTextOrientation() {
+        #expect(extract("<p>あ<span class=\"upright\">A</span></p>").orientations
+            == [OrientationAnnotation(range: 1..<2, orientation: .upright)])
+        #expect(extract("<p>あ<span class=\"sideways\">♡</span></p>").orientations
+            == [OrientationAnnotation(range: 1..<2, orientation: .sideways)])
+        // style からも読む (ベンダー接頭辞つきでも)
+        #expect(extract("<p>あ<span style=\"text-orientation: upright\">A</span></p>").orientations
+            == [OrientationAnnotation(range: 1..<2, orientation: .upright)])
+        #expect(extract("<p>あ<span style=\"-epub-text-orientation: sideways\">A</span></p>").orientations
+            == [OrientationAnnotation(range: 1..<2, orientation: .sideways)])
+        // upright-1 は縦中横なので向きの指定にはしない
+        #expect(extract("<p>あ<span class=\"upright-1\">12</span></p>").orientations.isEmpty)
+        #expect(extract("<p>あ<span class=\"upright-1\">12</span></p>").tateChuYoko == [1..<3])
+    }
+
     @Test func takesDpfjBordersAndPageBreaks() {
         // 四方を囲む罫は罫囲み、前後 (縦組みの右左) の 1 本は傍線にする
         #expect(extract("<p><span class=\"k-solid\">囲み</span></p>").boxes

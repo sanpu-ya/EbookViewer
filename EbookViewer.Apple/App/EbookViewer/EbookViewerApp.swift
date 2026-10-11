@@ -62,6 +62,13 @@ struct EbookViewerApp: App {
                     .keyboardShortcut("[", modifiers: .command)
                     .disabled(!model.hasContent)
                 Divider()
+                Button("Back") { model.goBackInHistory() }
+                    .keyboardShortcut("[", modifiers: [.command, .option])
+                    .disabled(!model.canGoBack)
+                Button("Forward") { model.goForwardInHistory() }
+                    .keyboardShortcut("]", modifiers: [.command, .option])
+                    .disabled(!model.canGoForward)
+                Divider()
                 Picker("Writing Mode", selection: Binding(get: { model.settings.writingMode }, set: { model.setWritingMode($0) })) {
                     ForEach(ReaderModel.writingModes, id: \.key) { m in
                         Text(m.label).tag(m.key)

@@ -280,6 +280,15 @@ open class STLabel: STPlatformView {
         }
     }
 
+    /// 縦組みでの文字の向きを決める範囲 (CSS の `text-orientation`)。
+    /// 横書きでは何も起きない。
+    open var orientationAnnotations: [STOrientationAnnotation] = [] {
+        didSet {
+            guard orientationAnnotations != oldValue else { return }
+            setNeedsLayout()
+        }
+    }
+
     /// 縦中横にする範囲 (青空文庫の「縦組み中で横に並んだ文字」)。
     /// 横書きでは何も起きない。まとまりが 1 語として切り出されないと横に並ばないので、
     /// 数字や欧文の 2〜3 文字を想定している。
@@ -651,6 +660,11 @@ open class STLabel: STPlatformView {
                         range: $0, head: annotation.head, hanging: annotation.hanging, tail: annotation.tail)
                 }
             }
+            label.orientationAnnotations = orientationAnnotations.compactMap { annotation in
+                clip(annotation.range, to: range).map {
+                    STOrientationAnnotation(range: $0, orientation: annotation.orientation)
+                }
+            }
             label.warichuRanges = warichuRanges.compactMap { clip($0, to: range) }
             label.imageAnnotations = imageAnnotations.compactMap { annotation in
                 guard range.contains(annotation.offset) else { return nil }
@@ -750,6 +764,8 @@ open class STLabel: STPlatformView {
         context.sizeScales = makeSizeScales()
         // 上付き・下付き
         context.shifts = makeShifts()
+        // 縦組みでの文字の向き
+        context.orientations = makeOrientations()
         // 字下げ・地付き
         applyIndents()
 
@@ -875,6 +891,19 @@ open class STLabel: STPlatformView {
         return shifts
     }
 
+    /// 範囲ごとの指定を、文字ごとの向きの配列にする。重なっていたら後の指定が勝つ。
+    private func makeOrientations() -> [STTextOrientation] {
+        guard !orientationAnnotations.isEmpty, let text, !text.isEmpty else { return [] }
+        var orientations = [STTextOrientation](repeating: .mixed, count: text.count)
+        for annotation in orientationAnnotations {
+            let lower = max(0, annotation.range.lowerBound)
+            let upper = min(orientations.count, annotation.range.upperBound)
+            guard lower < upper else { continue }
+            for i in lower..<upper { orientations[i] = annotation.orientation }
+        }
+        return orientations
+    }
+
     /// 範囲ごとの指定を、文字ごとの字面の配列にする。
     private func makeStyles() -> [STTextStyle] {
         guard !styleAnnotations.isEmpty, let text, !text.isEmpty else { return [] }
@@ -921,6 +950,7 @@ open class STLabel: STPlatformView {
         var indentAnnotations: [STIndentAnnotation]
         var warichuRanges: [Range<Int>]
         var tateChuYokoRanges: [Range<Int>]
+        var orientationAnnotations: [STOrientationAnnotation]
         var horizontalRanges: [Range<Int>]
         var pageBreakOffsets: [Int]
         var allowsRubyOverhang: Bool
@@ -960,6 +990,7 @@ open class STLabel: STPlatformView {
             indentAnnotations: indentAnnotations,
             warichuRanges: warichuRanges,
             tateChuYokoRanges: tateChuYokoRanges,
+            orientationAnnotations: orientationAnnotations,
             horizontalRanges: horizontalRanges,
             pageBreakOffsets: pageBreakOffsets,
             allowsRubyOverhang: allowsRubyOverhang,
