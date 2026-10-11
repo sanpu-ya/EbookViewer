@@ -1233,32 +1233,68 @@ open class STLabel: STPlatformView {
         }
     }
 
-    /// 罫囲みを描く。ページに出ている文字のまわりだけを囲む。
+    /// 罫囲みの枠。ページに出ている文字だけを囲み、行をまたぐときは**行ごとに分ける**
+    /// (CSS の box-decoration-break: clone と同じ)。1 つの枠でまとめて囲むと、
+    /// 途中の行の文字まで枠の中に取り込んでしまうため。
+    func boxRects(of annotation: STBoxAnnotation) -> [CGRect] {
+        let lower = max(0, annotation.range.lowerBound)
+        let upper = min(context.runs.count, annotation.range.upperBound)
+        guard lower < upper else { return [] }
+        let lineRange: Range<Int>? = isPaged ? pageLineRange : nil
+        let padding = boxPadding
+
+        var rects: [CGRect] = []
+        var box: CGRect = .null
+        var previousLine = -1
+        for index in lower..<upper {
+            let run = context.runs[index]
+            guard !run.char.isNewline else { continue }
+            if let lineRange {
+                guard lineRange.contains(run.line) else { continue }
+            } else if run.isHidden {
+                continue
+            }
+            if run.line != previousLine, !box.isNull {
+                rects.append(boxRect(around: box, padding: padding))
+                box = .null
+            }
+            box = box.isNull ? run.frame : box.union(run.frame)
+            previousLine = run.line
+        }
+        if !box.isNull { rects.append(boxRect(around: box, padding: padding)) }
+        return rects
+    }
+
+    /// 文字のかたまりのまわりに空きを足した枠。
+    ///
+    /// 行は表示領域のきわから始まってきわで終わるので、そのまま空きを足すと罫が外へ出て
+    /// 切れてしまう。文字が進む向き (縦書きなら上下) は表示領域の中に収める。
+    private func boxRect(around box: CGRect, padding: CGFloat) -> CGRect {
+        let rect = box.insetBy(dx: -padding, dy: -padding)
+        switch context.direction {
+        case .tbRl:
+            let minY = max(rect.minY, 0)
+            let maxY = min(rect.maxY, bounds.height)
+            return CGRect(x: rect.minX, y: minY, width: rect.width, height: max(0, maxY - minY))
+        case .lrTb:
+            let minX = max(rect.minX, 0)
+            let maxX = min(rect.maxX, bounds.width)
+            return CGRect(x: minX, y: rect.minY, width: max(0, maxX - minX), height: rect.height)
+        }
+    }
+
+    /// 罫囲みを描く。
     private func drawBoxes(_ dirtyRect: CGRect) {
         guard !boxAnnotations.isEmpty, let cgContext = UIGraphicsGetCurrentContext() else { return }
         cgContext.setStrokeColor(context.textColor.cgColor)
-        let lineRange: Range<Int>? = isPaged ? pageLineRange : nil
         let translation = contentTranslation
-        let padding = boxPadding
-
+        let thickness = lineThickness
         for annotation in boxAnnotations {
-            let lower = max(0, annotation.range.lowerBound)
-            let upper = min(context.runs.count, annotation.range.upperBound)
-            guard lower < upper else { continue }
-            var box: CGRect = .null
-            for index in lower..<upper {
-                let run = context.runs[index]
-                guard !run.char.isNewline else { continue }
-                if let lineRange {
-                    guard lineRange.contains(run.line) else { continue }
-                } else if run.isHidden {
-                    continue
-                }
-                box = box.isNull ? run.frame : box.union(run.frame)
+            for rect in boxRects(of: annotation) {
+                cgContext.strokeTextBox(
+                    rect.offsetBy(dx: translation.x, dy: translation.y),
+                    thickness: thickness, style: annotation.style)
             }
-            guard !box.isNull else { continue }
-            let rect = box.insetBy(dx: -padding, dy: -padding).offsetBy(dx: translation.x, dy: translation.y)
-            cgContext.strokeTextBox(rect, thickness: lineThickness, style: annotation.style)
         }
     }
 

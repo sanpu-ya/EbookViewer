@@ -292,6 +292,33 @@ struct StyleTests {
         #expect(plainWidth <= Int(plain.width) + 2)
     }
 
+    @Test func boxAcrossLinesIsSplitPerLine() {
+        // 1 行に 4〜5 文字しか入らない高さ。10 文字を囲むと何行かにまたがる
+        let size = CGSize(width: 200, height: 100)
+        let label = makeLabel(
+            "あいうえおかきくけこ", boxes: [STBoxAnnotation(range: 0..<10)], size: size)
+        #expect(label.layoutedLineCount > 1)
+        // 1 つの枠でまとめず、行ごとに 1 つずつ囲む
+        let rects = label.boxRects(of: label.boxAnnotations[0])
+        #expect(rects.count == label.layoutedLineCount)
+        // 縦書きなので行ごとに横へずれ、枠どうしは重ならない
+        let sorted = rects.sorted { $0.minX < $1.minX }
+        for (left, right) in zip(sorted, sorted.dropFirst()) {
+            #expect(left.maxX <= right.minX)
+        }
+        // どの枠も、その行の文字より外側にある
+        for rect in rects {
+            let inside = label.context.runs.filter { rect.insetBy(dx: 2, dy: 2).intersects($0.frame) }
+            #expect(!inside.isEmpty)
+            #expect(inside.allSatisfy { rect.contains($0.frame) })
+        }
+    }
+
+    @Test func boxOnOneLineStaysASingleFrame() {
+        let label = makeLabel("前囲み後", boxes: [STBoxAnnotation(range: 1..<3)])
+        #expect(label.boxRects(of: label.boxAnnotations[0]).count == 1)
+    }
+
     @Test func boxReservesSpaceOnBothSides() {
         let plain = makeLabel("囲み")
         let boxed = makeLabel("囲み", boxes: [STBoxAnnotation(range: 0..<2)])
