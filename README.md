@@ -322,6 +322,12 @@ ZIP は自前の `ZipArchive` と zlib で読みます (Linux では zlib を直
 - 字下げ・地付き・割り注・罫囲みの取り出し (`jisage_N` / `chitsuki_N` / `warichu` / `keigakomi`、margin の style、ブロック全体にかかること)
 - 字詰めの取り出し (`jizume_N` の class、`width` の style、`line-height` や `max-width` を取り違えないこと)
 - 見本の本 ([`Samples/annotations.epub`](EbookViewer.Apple/EbookCore/Tests/EbookCoreTests/Samples/annotations.epub)) から、折り返して字下げ・上付き下付き・横組み・字詰めがひととおり取り出せること
+
+WebView 表示については、見本の本を WKWebView に実際に組ませて次を確かめています (macOS のみ)。
+
+- 縦書きで青空文庫の字下げ・字詰めが論理プロパティへ移ること (`margin-left` → 行頭の空き、`width` → 行の長さ)
+- 横書きでは元の指定のままであること
+- 組方向を切り替えると、読み替えと元へ戻すのが往復すること
 - 折り返して字下げの取り出し (margin と負の `text-indent` の組、ふつうの字下げと区別されること)
 - 上付き・下付きの取り出し (`superscript` / `subscript` / `upr` / `swr` の class、`<sup>` / `<sub>` のタグ、小さくなることと寄せる側)
 - 横組みの取り出し (ブロックは横組み、行の中は縦中横、`writing-mode` の style)
