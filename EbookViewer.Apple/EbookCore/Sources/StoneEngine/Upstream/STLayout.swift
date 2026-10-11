@@ -567,6 +567,18 @@ class STLayout {
         let gap = (context.renderSize.width - total) / CGFloat(tokenCount)
         let diff = context.renderSize.width - total
         
+        // 中央ぞろえ (EbookViewer)
+        if context.isCentered(at: runIdRange.lowerBound) {
+            let dx = (context.renderSize.width - total) * 0.5
+            if dx > 0 {
+                for i in runIdRange {
+                    context.runs[i].position.x += dx
+                    context.runs[i].frame = context.runs[i].frame.shift(dx: dx, dy: 0)
+                }
+            }
+            return
+        }
+        
         // 地付き・地寄せ (EbookViewer): 行末へ寄せる
         if let tail = context.trailingGap(at: runIdRange.lowerBound) {
             let dx = context.renderSize.width - total - tail
@@ -840,6 +852,18 @@ class STLayout {
         // Calc gap and diff
         let gap = (context.renderSize.height - total) / CGFloat(tokenCount)
         let diff = context.renderSize.height - total
+        
+        // 中央ぞろえ (EbookViewer)
+        if context.isCentered(at: runIdRange.lowerBound) {
+            let dy = (context.renderSize.height - total) * 0.5
+            if dy > 0 {
+                for i in runIdRange {
+                    context.runs[i].position.y += dy
+                    context.runs[i].frame = context.runs[i].frame.shift(dx: 0, dy: dy)
+                }
+            }
+            return
+        }
         
         // 地付き・地寄せ (EbookViewer): 行末へ寄せる
         if let tail = context.trailingGap(at: runIdRange.lowerBound) {

@@ -65,16 +65,19 @@ public struct STIndentAnnotation: Equatable, Sendable {
     public var tail: CGFloat?
     /// 1 行に入れる文字数 (青空文庫の「字詰め」)。決めないなら nil。
     public var length: CGFloat?
+    /// 行を中央にそろえるか (`text-align: center`)。
+    public var centered: Bool
 
     public init(
         range: Range<Int>, head: CGFloat = 0, hanging: CGFloat? = nil, tail: CGFloat? = nil,
-        length: CGFloat? = nil
+        length: CGFloat? = nil, centered: Bool = false
     ) {
         self.range = range
         self.head = head
         self.hanging = hanging
         self.tail = tail
         self.length = length
+        self.centered = centered
     }
 }
 

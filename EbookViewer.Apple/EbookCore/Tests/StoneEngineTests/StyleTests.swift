@@ -593,6 +593,18 @@ struct StyleTests {
         #expect(wide.layoutedLineCount == plain.layoutedLineCount)
     }
 
+    @Test func centeredLinesAreCenteredInTheColumn() {
+        // text-align: center。縦書きなので行の中で上下の中央にそろう
+        let size = CGSize(width: 400, height: 200)
+        let plain = makeLabel("題名", size: size)
+        let centered = makeLabel(
+            "題名", indents: [STIndentAnnotation(range: 0..<2, centered: true)], size: size)
+        #expect(abs(plain.context.runs[0].frame.minY - 0) < 0.5)
+        // 2 文字 = 40pt なので (200 - 40) / 2 = 80pt ずれる
+        #expect(abs(centered.context.runs[0].frame.minY - 80) < 0.5)
+        #expect(abs(centered.context.runs[1].frame.maxY - 120) < 0.5)
+    }
+
     @Test func trailingAlignmentPushesTheLineToTheEnd() {
         // 地付き: 行の終わりにそろえる
         let size = CGSize(width: 400, height: 200)

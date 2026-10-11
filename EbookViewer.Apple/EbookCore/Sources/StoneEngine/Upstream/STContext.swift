@@ -85,6 +85,8 @@ open class STContext {
     /// 文字ごとの行の長さ (青空文庫の「字詰め」)。nil なら表示領域いっぱいまで使う。
     /// 行の始まり (字下げのあと) から測った長さ。
     public var lineLengths: [CGFloat?] = []
+    /// 文字ごとの、行を中央にそろえるか (`text-align: center`)。
+    public var centeredLines: [Bool] = []
     
     /// runId の run から行が始まるときの字下げ。
     public func indent(at runId: Int) -> CGFloat {
@@ -105,6 +107,11 @@ open class STContext {
     public func trailingGap(at runId: Int) -> CGFloat? {
         guard runId >= 0, runId < trailingGaps.count else { return nil }
         return trailingGaps[runId].map { max(0, $0) }
+    }
+    
+    /// runId の run から始まる行を、中央にそろえるか。
+    public func isCentered(at runId: Int) -> Bool {
+        runId >= 0 && runId < centeredLines.count && centeredLines[runId]
     }
     
     /// runId の run から始まる行の長さ (字詰め)。決めていなければ nil。

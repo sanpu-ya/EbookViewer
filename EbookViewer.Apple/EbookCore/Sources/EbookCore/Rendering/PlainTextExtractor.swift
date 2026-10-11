@@ -89,16 +89,19 @@ public struct IndentAnnotation: Equatable, Sendable {
     public let tail: Double?
     /// 1 行に入れる文字数 (青空文庫の「字詰め」)。決めないなら nil。
     public let length: Double?
+    /// 行を中央にそろえるか (`text-align: center`)。
+    public let centered: Bool
 
     public init(
         range: Range<Int>, head: Double = 0, hanging: Double? = nil, tail: Double? = nil,
-        length: Double? = nil
+        length: Double? = nil, centered: Bool = false
     ) {
         self.range = range
         self.head = head
         self.hanging = hanging
         self.tail = tail
         self.length = length
+        self.centered = centered
     }
 }
 
@@ -301,6 +304,12 @@ public enum PlainTextExtractor {
         return false
     }
 
+    /// 本文と同じ行に組む見出しか (青空文庫の「同行見出し」「窓見出し」)。
+    static func isInlineHeading(className: String) -> Bool {
+        className.lowercased().split(whereSeparator: { $0 == " " || $0 == "\t" })
+            .contains { $0.hasPrefix("dogyo") || $0.hasPrefix("mado") }
+    }
+
     /// ブロックとしてかかる要素か (行の中にかかる `<span>` などと区別する)。
     static func isBlockContainer(tag: String) -> Bool {
         indentContainerTags.contains(tag) || headingSizes[tag] != nil
@@ -330,6 +339,8 @@ public enum PlainTextExtractor {
         case trailing(Double)
         /// 字詰め (1 行に入れる文字数)。
         case lineLength(Double)
+        /// 行を中央にそろえる。
+        case centered
         /// 割り注。
         case warichu
         /// 罫囲み。
@@ -383,9 +394,11 @@ public enum PlainTextExtractor {
     /// (行の右 = 上付き、行の左 = 下付き)。
     static func shiftSide(forClassName name: String) -> RubyPosition? {
         switch name {
-        case "superscript", "sup", "upperright", "upr", "gyomigi":
+        // 上付き小文字・行右小書き。訓点送り仮名も親字の右に添える
+        case "superscript", "sup", "upperright", "upr", "gyomigi", "okurigana":
             return .over
-        case "subscript", "sub", "lowerleft", "swr", "gyohidari":
+        // 下付き小文字・行左小書き。返り点は親字の左下に添える
+        case "subscript", "sub", "lowerleft", "swr", "gyohidari", "kaeriten":
             return .under
         default:
             return nil
@@ -415,6 +428,8 @@ public enum PlainTextExtractor {
             return .warichu
         case "yokogumi", "yoko", "horizontal":
             return .horizontal
+        case "chuuou", "chuo", "center", "centered":
+            return .centered
         case "tcy":
             return .tateChuYoko
         case "futoji", "gothic", "goth", "b", "bold":
@@ -475,7 +490,7 @@ public enum PlainTextExtractor {
         case "chap2", "naka-midashi", "dogyo-naka-midashi", "mado-naka-midashi": return 1.20
         case "chap3", "ko-midashi", "dogyo-ko-midashi", "mado-ko-midashi": return 1.10
         // font-size: smaller 相当
-        case "notes", "caption", "kaeriten", "okurigana":
+        case "notes", "caption":
             return 0.83
         default: return nil
         }
@@ -552,6 +567,13 @@ public enum PlainTextExtractor {
             if let value = emValue(of: property, in: style), value > 0 { return value }
         }
         return nil
+    }
+
+    /// `style="text-align: center"` から、行を中央にそろえる指定を読む。
+    static func isCentered(forStyle style: String) -> Bool {
+        let lowered = style.lowercased()
+        guard let range = lowered.range(of: "text-align") else { return false }
+        return lowered[range.upperBound...].drop { $0 == ":" || $0 == " " }.hasPrefix("center")
     }
 
     /// `style="writing-mode: horizontal-tb"` から、縦組みの中の横組みを読む。
@@ -805,13 +827,16 @@ public enum PlainTextExtractor {
             }
         }
 
-        // 見出しは大きさを変えるので範囲を覚える。改行はブロック要素として別に入る
+        // 見出しは大きさを変えるので範囲を覚える。改行はブロック要素として別に入る。
+        // 同行見出し・窓見出しは本文と同じ行に組むものなので、前後に改行を入れない
         if headingSizes[tag.name] != nil {
             if tag.isClose {
                 builder.endEmphasis(tag: tag.name)
             } else if !tag.isSelfClose {
-                builder.beginEmphasis(tag: tag.name, className: tag.attributes["class"] ?? "",
+                let className = tag.attributes["class"] ?? ""
+                builder.beginEmphasis(tag: tag.name, className: className,
                                       style: tag.attributes["style"] ?? "")
+                if isInlineHeading(className: className) { builder.beginInlineHeading(tag: tag.name) }
             }
         }
 
@@ -862,6 +887,8 @@ public enum PlainTextExtractor {
         } else if blockTags.contains(tag.name) {
             builder.breakLines(1)
         }
+        // 見出しの後ろに空行を入れないよう、閉じるのはブロックの改行を見たあと
+        if tag.isClose, headingSizes[tag.name] != nil { builder.endInlineHeading(tag: tag.name) }
     }
 
     private static func isNameCharacter(_ c: Character) -> Bool {
@@ -963,8 +990,11 @@ public enum PlainTextExtractor {
         private var pendingNewlines = 0
         /// 位置が決まるのを待っているアンカー。
         private var pendingAnchors: [String] = []
-        /// 次に出る文字から新しいページを始めるか。
-        private var pendingPageBreak = false
+        /// 本文と同じ行に組む見出し (同行見出し・窓見出し) の入れ子の深さ。
+        /// この中では、ブロック要素の改行を入れない。
+        private var inlineHeadings: [String] = []
+        /// 次に出る文字の手前に入れるページの区切りの数。2 つ以上なら空のページができる。
+        private var pendingPageBreaks = 0
         private var pageBreaks: [Int] = []
         private var anchors: [String: Int] = [:]
         private var lastCharacter: Character?
@@ -1114,10 +1144,11 @@ public enum PlainTextExtractor {
             }
             let styleIndent = PlainTextExtractor.indent(forStyle: open.style)
             let styleLength = PlainTextExtractor.lineLength(forStyle: open.style)
-            if styleIndent != nil || styleLength != nil {
+            let styleCentered = PlainTextExtractor.isCentered(forStyle: open.style)
+            if styleIndent != nil || styleLength != nil || styleCentered {
                 indents.append(IndentAnnotation(
                     range: range, head: styleIndent?.head ?? 0, hanging: styleIndent?.hanging,
-                    length: styleLength))
+                    length: styleLength, centered: styleCentered))
             }
             // class で指定されていればそれに従う (青空文庫の注記から変換されたもの)。
             // 青空文庫の HTML は class と style の両方を持つので、字下げは style を優先する
@@ -1126,6 +1157,7 @@ public enum PlainTextExtractor {
                     switch $0 {
                     case .indent: return styleIndent == nil
                     case .lineLength: return styleLength == nil
+                    case .centered: return !styleCentered
                     default: return true
                     }
                 }
@@ -1136,7 +1168,7 @@ public enum PlainTextExtractor {
                 for decoration in decorations { apply(decoration, to: range, tag: open.tag) }
                 return
             }
-            if styleIndent != nil || styleLength != nil { return }
+            if styleIndent != nil || styleLength != nil || styleCentered { return }
             // 見出しは class が無くても大きさを変える
             if let scale = PlainTextExtractor.headingSizes[open.tag] {
                 if PlainTextExtractor.sizeScale(forStyle: open.style) == nil {
@@ -1189,6 +1221,8 @@ public enum PlainTextExtractor {
                 indents.append(IndentAnnotation(range: range, tail: tail))
             case .lineLength(let length):
                 indents.append(IndentAnnotation(range: range, length: length))
+            case .centered:
+                indents.append(IndentAnnotation(range: range, centered: true))
             case .warichu:
                 warichu.append(range)
             case .box(let style):
@@ -1246,13 +1280,20 @@ public enum PlainTextExtractor {
         /// ここから新しいページを始める。位置が決まる (= 次の文字が出る) のは append の中。
         mutating func breakPage() {
             guard !isDropping, count > 0 else { return }
-            pendingPageBreak = true
+            pendingPageBreaks += 1
             // ページの変わり目は段落の区切りでもある
             breakLines(1)
         }
 
+        mutating func beginInlineHeading(tag: String) { inlineHeadings.append(tag) }
+
+        mutating func endInlineHeading(tag: String) {
+            guard let index = inlineHeadings.lastIndex(of: tag) else { return }
+            inlineHeadings.remove(at: index)
+        }
+
         mutating func breakLines(_ n: Int) {
-            guard !isDropping else { return }
+            guard !isDropping, inlineHeadings.isEmpty else { return }
             // 先頭の空行は作らない
             guard count > 0 else { return }
             pendingSpace = false
@@ -1286,9 +1327,11 @@ public enum PlainTextExtractor {
                 pendingAnchors.removeAll()
             }
             // 改ページも、畳み込んだ改行ではなくこの 1 文字から始める
-            if pendingPageBreak {
-                if pageBreaks.last != count { pageBreaks.append(count) }
-                pendingPageBreak = false
+            // 改ページが続いたぶんはそのまま残す。青空文庫の「空白ページ」は
+            // 改ページを 2 つ続けて書くものなので、2 つめが空のページになる
+            if pendingPageBreaks > 0 {
+                for _ in 0..<pendingPageBreaks { pageBreaks.append(count) }
+                pendingPageBreaks = 0
             }
             // 強調の始まりも、畳み込んだ空白ではなく中身の 1 文字目にそろえる
             for i in emphasisStack.indices where emphasisStack[i].start == nil {
@@ -1427,7 +1470,7 @@ public enum PlainTextExtractor {
                 guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
                 return IndentAnnotation(
                     range: range, head: annotation.head, hanging: annotation.hanging,
-                    tail: annotation.tail, length: annotation.length)
+                    tail: annotation.tail, length: annotation.length, centered: annotation.centered)
             }
             let shiftedShifts = shifts.compactMap { annotation -> ShiftAnnotation? in
                 guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }

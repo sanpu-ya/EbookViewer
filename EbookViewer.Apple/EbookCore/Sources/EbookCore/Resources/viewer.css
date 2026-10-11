@@ -57,6 +57,17 @@ body img, body figure, body svg {
   break-after: column !important;
 }
 
+/* 左右中央 (青空文庫の注記から変換された class) */
+.chuuou, .chuo, .center, .centered {
+  text-align: center;
+}
+
+/* 同行見出し・窓見出しは本文と同じ行に組む */
+.dogyo-o-midashi, .dogyo-naka-midashi, .dogyo-ko-midashi,
+.mado-o-midashi, .mado-naka-midashi, .mado-ko-midashi {
+  display: inline;
+}
+
 /* ルビ */
 ruby {
   ruby-align: center;

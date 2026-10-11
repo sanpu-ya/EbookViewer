@@ -80,6 +80,31 @@ struct PagedLabelTests {
         }
     }
 
+    @Test func twoPageBreaksInARowMakeABlankPage() {
+        // 青空文庫の「空白ページの挿入」は、改ページを 2 つ続けて書くもの
+        let size = CGSize(width: 400, height: 600)
+        let offset = Self.sample.count / 2
+        let once = makeLabel(size: size)
+        once.pageBreakOffsets = [offset]
+        once.layoutSubviews()
+        let twice = makeLabel(size: size)
+        twice.pageBreakOffsets = [offset, offset]
+        twice.layoutSubviews()
+
+        // 空白のページが 1 枚増える
+        #expect(twice.pageCount == once.pageCount + 1)
+        let page = twice.page(ofCharacterAt: offset)
+        guard case .blank = twice.pages[page - 1] else {
+            Issue.record("空白のページが無い")
+            return
+        }
+        // 空白のページには何も描かない
+        twice.pageIndex = page - 1
+        #expect(twice.drawBuckets.isEmpty)
+        // 本文は前後にそのまま続く
+        #expect(twice.page(ofCharacterAt: 0) == once.page(ofCharacterAt: 0))
+    }
+
     @Test func pageBreakAtTheVeryStartMakesNoEmptyPage() {
         let size = CGSize(width: 400, height: 600)
         let plain = makeLabel(size: size)

@@ -421,6 +421,8 @@ open class STLabel: STPlatformView {
         case image(Int)
         /// 横組みのブロック (horizontalLabels の添字と、そのブロックの中のページ)。
         case horizontal(block: Int, page: Int)
+        /// 何も載せない空白のページ (青空文庫の「空白ページの挿入」)。
+        case blank(Int)
     }
 
     /// ページの並び。レイアウトのあとに作る。
@@ -454,19 +456,28 @@ open class STLabel: STPlatformView {
         }
         var placedBlocks = Set<Int>()
 
-        // 改ページ。その文字が載っている行から新しいページを始める
-        var breakLines = Set<Int>()
+        // 改ページ。その文字が載っている行から新しいページを始める。
+        // 同じところで 2 回以上区切るよう言われたら、そのぶん空白のページを挟む
+        var breakLines: [Int: Int] = [:]
         for offset in pageBreakOffsets where offset > 0 && offset < context.runs.count {
-            breakLines.insert(context.runs[offset].line)
+            breakLines[context.runs[offset].line, default: 0] += 1
         }
+        var blankPages = 0
 
         var pages: [PageContent] = []
         var start = 0
         var line = 0
         while line < lineCount {
-            if breakLines.contains(line), line > start {
-                pages.append(.text(start..<line))
-                start = line
+            if let breaks = breakLines[line] {
+                if line > start {
+                    pages.append(.text(start..<line))
+                    start = line
+                }
+                for _ in 1..<max(1, breaks) {
+                    pages.append(.blank(blankPages))
+                    blankPages += 1
+                }
+                breakLines[line] = nil
             }
             if let block = horizontalLines[line] {
                 if line > start { pages.append(.text(start..<line)) }
@@ -803,12 +814,14 @@ open class STLabel: STPlatformView {
             context.hangingIndents = []
             context.trailingGaps = []
             context.lineLengths = []
+            context.centeredLines = []
             return
         }
         var indents = [CGFloat](repeating: 0, count: text.count)
         var hangings = [CGFloat?](repeating: nil, count: text.count)
         var trailings = [CGFloat?](repeating: nil, count: text.count)
         var lengths = [CGFloat?](repeating: nil, count: text.count)
+        var centered = [Bool](repeating: false, count: text.count)
         let em = context.adjustFontSize
         for annotation in indentAnnotations {
             let lower = max(0, annotation.range.lowerBound)
@@ -819,12 +832,14 @@ open class STLabel: STPlatformView {
                 if let hanging = annotation.hanging { hangings[i] = hanging * em }
                 if let tail = annotation.tail { trailings[i] = tail * em }
                 if let length = annotation.length { lengths[i] = length * em }
+                if annotation.centered { centered[i] = true }
             }
         }
         context.indents = indents
         context.hangingIndents = hangings
         context.trailingGaps = trailings
         context.lineLengths = lengths
+        context.centeredLines = centered
     }
 
     /// 範囲ごとの指定を、文字ごとの大きさの配列にする。重なっていたら後の指定を掛け合わせる。
@@ -1331,6 +1346,8 @@ open class STLabel: STPlatformView {
         }
         // 横組みのページは子ビューが描く
         if isPaged, case .horizontal = currentPage { return }
+        // 空白のページには何も載せない
+        if isPaged, case .blank = currentPage { return }
 
         // Draw
         drawBoxes(dirtyRect)

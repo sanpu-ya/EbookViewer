@@ -53,6 +53,20 @@ struct PlainTextExtractorTests {
         #expect(kaipage.pageBreaks.count == 2)
         let chars = Array(kaipage.text)
         #expect(kaipage.pageBreaks.allSatisfy { chars[$0 - 1].isNewline })
+
+        // 六章: 中央ぞろえ・同行見出し・訓点・空白ページ
+        let rest = try sampleChapter(5)
+        #expect(rest.indents.contains { $0.centered })
+        #expect(rest.shifts.contains { $0.position == .under })  // 返り点
+        #expect(rest.shifts.contains { $0.position == .over })   // 訓点送り仮名
+        // 空白ページは、同じところを 2 回区切るものとして出てくる
+        #expect(rest.pageBreaks.count == 2)
+        #expect(rest.pageBreaks[0] == rest.pageBreaks[1])
+        // 同行見出しは本文と同じ行に残る (前後に空行が入らない)
+        let restChars = Array(rest.text)
+        let heading = try #require(rest.text.range(of: "同行見出し"))
+        let after = rest.text.distance(from: rest.text.startIndex, to: heading.upperBound)
+        #expect(!restChars[after].isNewline)
     }
 
     @Test func stripsTagsAndKeepsBlockBreaks() {
@@ -382,6 +396,30 @@ struct PlainTextExtractorTests {
         ])
     }
 
+    @Test func inlineHeadingStaysOnTheSameLineAsTheText() {
+        // 同行見出し: 見出しと本文が同じ行に並ぶ
+        let dogyo = extract("<p>前</p><h4 class=\"dogyo-naka-midashi\">見出し</h4>つづきの本文")
+        #expect(dogyo.text == "前\n見出しつづきの本文")
+        #expect(dogyo.sizes == [SizeAnnotation(range: 2..<5, scale: 1.2)])
+        // 窓見出しも同じ扱い
+        #expect(extract("<p>前</p><h4 class=\"mado-naka-midashi\">見出し</h4>つづき").text
+            == "前\n見出しつづき")
+        // ふつうの見出しは前後に空行が入る
+        #expect(extract("<p>前</p><h4 class=\"naka-midashi\">見出し</h4>つづき").text
+            == "前\n\n見出し\n\nつづき")
+    }
+
+    @Test func takesKuntenPositions() {
+        // 返り点は親字の左、訓点送り仮名は右に寄せる
+        #expect(extract("<p>學<span class=\"kaeriten\">レ</span></p>").shifts
+            == [ShiftAnnotation(range: 1..<2, position: .under)])
+        #expect(extract("<p>學<span class=\"okurigana\">ビテ</span></p>").shifts
+            == [ShiftAnnotation(range: 1..<3, position: .over)])
+        // 小さくもする
+        #expect(extract("<p>學<span class=\"kaeriten\">レ</span></p>").sizes
+            == [SizeAnnotation(range: 1..<2, scale: 0.6)])
+    }
+
     @Test func takesIndentFromAozoraClasses() {
         #expect(extract("<div class=\"jisage_3\">字下げ</div>").indents
             == [IndentAnnotation(range: 0..<3, head: 3)])
@@ -477,6 +515,20 @@ struct PlainTextExtractorTests {
         #expect(breakChars("<p>前</p><p style=\"page-break-before: always\">後</p>") == ["後"])
         #expect(breakChars("<p style=\"page-break-after: always\">前</p><p>後</p>") == ["後"])
         #expect(breakChars("<p>前</p><p style=\"break-before: page\">後</p>") == ["後"])
+    }
+
+    @Test func twoPageBreaksInARowStayTwo() {
+        // 青空文庫の「空白ページの挿入」は改ページを 2 つ続けて書くので、畳まずに残す
+        let r = extract("<p>前</p><div class=\"kaipage\"></div><div class=\"kaipage\"></div><p>後</p>")
+        #expect(r.pageBreaks == [2, 2])
+    }
+
+    @Test func takesCenteredFromClassAndStyle() {
+        #expect(extract("<div style=\"text-align: center\">題名</div>").indents
+            == [IndentAnnotation(range: 0..<2, centered: true)])
+        #expect(extract("<div class=\"chuuou\">題名</div>").indents
+            == [IndentAnnotation(range: 0..<2, centered: true)])
+        #expect(extract("<div style=\"text-align: right\">署名</div>").indents.isEmpty)
     }
 
     @Test func ignoresPageBreaksWithNothingBeforeOrAfter() {
