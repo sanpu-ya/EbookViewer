@@ -584,11 +584,31 @@ open class STContext {
         
         // For number token
         if tokens[run.tokenId].runIdRange.map({ runs[$0] }).first(where: { !$0.char.isNumber }) == nil {
+            // 欧文の語や式の中の数字は、まわりの欧文と同じく倒す (EbookViewer)
+            guard !isInLatinWord(token: tokens[run.tokenId]) else { return false }
+            
             // Check token count
             return tokens[run.tokenId].runIdRange.count <= 2
         }
         
         return false
+    }
+    
+    /// 欧文の語や式の中の数字か (H2O の 2、x2 の 2 など)。
+    ///
+    /// 日本語の文の中の数字は縦中横にして正立させるが、欧文の中の数字をそうすると、
+    /// 隣の欧文だけが倒れて組みがちぐはぐになる。隣が欧文の文字ならまとめて倒す。
+    private func isInLatinWord(token: STToken) -> Bool {
+        isLatinLetter(at: token.runIdRange.lowerBound - 1)
+            || isLatinLetter(at: token.runIdRange.upperBound)
+    }
+    
+    /// その run が、縦書きで倒して組む文字種の文字か。
+    private func isLatinLetter(at runId: Int) -> Bool {
+        guard runId >= 0, runId < runs.count else { return false }
+        let run = runs[runId]
+        guard run.char.isLetter else { return false }
+        return !fontManager.script(fontId: run.fontId).notNeedsToClockwiseInTbRl
     }
     
     //--------------------------------------------------------------//

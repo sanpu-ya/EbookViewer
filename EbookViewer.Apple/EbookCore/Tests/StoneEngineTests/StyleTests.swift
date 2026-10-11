@@ -610,6 +610,17 @@ struct StyleTests {
         #expect(label.context.isTateChuYoko(run: label.context.runs[2]))
     }
 
+    @Test func digitsInsideALatinWordStayWithTheLatin() {
+        // 欧文の語や式の中の数字を正立させると、隣の欧文だけが倒れてちぐはぐになる。
+        // H2O の 2、x2 の 2 は、まわりの欧文と同じく倒す
+        let label = makeLabel("H2O と x2 と 30年")
+        #expect(!label.context.isTateChuYoko(run: label.context.runs[1]))
+        #expect(label.context.isClockwise(run: label.context.runs[1]))
+        #expect(!label.context.isTateChuYoko(run: label.context.runs[7]))
+        // 日本語の文の中の数字は、これまでどおり縦中横にする
+        #expect(label.context.isTateChuYoko(run: label.context.runs[11]))
+    }
+
     @Test func tooLongTateChuYokoIsLeftAsItIs() {
         // 1 文字ぶんに収まらない長さは、横に並べると隣の行にはみ出すのでそのままにする
         let label = makeLabel("昭和1000年", tateChuYoko: [2..<6])
