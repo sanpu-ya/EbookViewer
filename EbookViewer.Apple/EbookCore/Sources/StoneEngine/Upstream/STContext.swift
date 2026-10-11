@@ -82,6 +82,9 @@ open class STContext {
     public var hangingIndents: [CGFloat?] = []
     /// 文字ごとの地付き・地寄せ。nil なら寄せない。値は行の終わりへ空ける長さ。
     public var trailingGaps: [CGFloat?] = []
+    /// 文字ごとの行の長さ (青空文庫の「字詰め」)。nil なら表示領域いっぱいまで使う。
+    /// 行の始まり (字下げのあと) から測った長さ。
+    public var lineLengths: [CGFloat?] = []
     
     /// runId の run から行が始まるときの字下げ。
     public func indent(at runId: Int) -> CGFloat {
@@ -102,6 +105,14 @@ open class STContext {
     public func trailingGap(at runId: Int) -> CGFloat? {
         guard runId >= 0, runId < trailingGaps.count else { return nil }
         return trailingGaps[runId].map { max(0, $0) }
+    }
+    
+    /// runId の run から始まる行の長さ (字詰め)。決めていなければ nil。
+    public func lineLength(at runId: Int) -> CGFloat? {
+        guard runId >= 0, runId < lineLengths.count, let length = lineLengths[runId], length > 0 else {
+            return nil
+        }
+        return length
     }
     
     // Font size (EbookViewer)

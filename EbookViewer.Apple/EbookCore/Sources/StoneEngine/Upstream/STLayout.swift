@@ -31,9 +31,19 @@ class STLayout {
     private var minY: CGFloat { 0 }
     private var maxX: CGFloat { context.renderSize.width }
     private var maxY: CGFloat { context.renderSize.height }
-    /// 地寄せで行末に空けるぶんを引いた、いまの行の終わり (EbookViewer)。
-    private var lineMaxX: CGFloat { maxX - (context.trailingGap(at: lineStartRunId) ?? 0) }
-    private var lineMaxY: CGFloat { maxY - (context.trailingGap(at: lineStartRunId) ?? 0) }
+    /// 地寄せで行末に空けるぶんと、字詰めで決めた行の長さを見た、いまの行の終わり (EbookViewer)。
+    private var lineMaxX: CGFloat { lineMax(maxX) }
+    private var lineMaxY: CGFloat { lineMax(maxY) }
+    /// いまの行が始まった、文字が進む向きの位置 (字詰めの終わりをここから測る)。
+    private var lineStartInline: CGFloat = 0
+    
+    private func lineMax(_ limit: CGFloat) -> CGFloat {
+        var end = limit - (context.trailingGap(at: lineStartRunId) ?? 0)
+        if let length = context.lineLength(at: lineStartRunId) {
+            end = min(end, lineStartInline + length)
+        }
+        return end
+    }
     private var tmpX: CGFloat?
     
     //--------------------------------------------------------------//
@@ -292,6 +302,7 @@ class STLayout {
         // Go next line (EbookViewer: 次の行の字下げぶんだけ空ける)
         x = minX + context.indent(at: runId + 1, isWrapped: isWrapped)
         y += context.adjustLineHeight
+        lineStartInline = x
     }
     
     private func goNextLineTbRl() {
@@ -333,6 +344,7 @@ class STLayout {
         // Go next line (EbookViewer: 次の行の字下げぶんだけ空ける)
         x -= context.adjustLineHeight
         y = context.indent(at: runId + 1, isWrapped: isWrapped)
+        lineStartInline = y
     }
     
     /// いまの行が折り返しで終わるか (改行で終わるのではないか)。
@@ -989,6 +1001,7 @@ class STLayout {
         case .lrTb: x += context.indent(at: 0)
         case .tbRl: y += context.indent(at: 0)
         }
+        lineStartInline = context.direction == .lrTb ? x : y
         tmpX = nil
         runId = 0
         lineStartRunId = 0

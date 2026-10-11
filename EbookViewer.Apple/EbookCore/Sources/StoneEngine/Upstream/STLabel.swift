@@ -783,11 +783,13 @@ open class STLabel: STPlatformView {
             context.indents = []
             context.hangingIndents = []
             context.trailingGaps = []
+            context.lineLengths = []
             return
         }
         var indents = [CGFloat](repeating: 0, count: text.count)
         var hangings = [CGFloat?](repeating: nil, count: text.count)
         var trailings = [CGFloat?](repeating: nil, count: text.count)
+        var lengths = [CGFloat?](repeating: nil, count: text.count)
         let em = context.adjustFontSize
         for annotation in indentAnnotations {
             let lower = max(0, annotation.range.lowerBound)
@@ -797,11 +799,13 @@ open class STLabel: STPlatformView {
                 if annotation.head != 0 { indents[i] = annotation.head * em }
                 if let hanging = annotation.hanging { hangings[i] = hanging * em }
                 if let tail = annotation.tail { trailings[i] = tail * em }
+                if let length = annotation.length { lengths[i] = length * em }
             }
         }
         context.indents = indents
         context.hangingIndents = hangings
         context.trailingGaps = trailings
+        context.lineLengths = lengths
     }
 
     /// 範囲ごとの指定を、文字ごとの大きさの配列にする。重なっていたら後の指定を掛け合わせる。

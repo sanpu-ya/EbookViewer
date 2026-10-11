@@ -63,12 +63,18 @@ public struct STIndentAnnotation: Equatable, Sendable {
     public var hanging: CGFloat?
     /// 行末へ寄せるなら、行の終わりに空ける文字数。寄せないなら nil。
     public var tail: CGFloat?
+    /// 1 行に入れる文字数 (青空文庫の「字詰め」)。決めないなら nil。
+    public var length: CGFloat?
 
-    public init(range: Range<Int>, head: CGFloat = 0, hanging: CGFloat? = nil, tail: CGFloat? = nil) {
+    public init(
+        range: Range<Int>, head: CGFloat = 0, hanging: CGFloat? = nil, tail: CGFloat? = nil,
+        length: CGFloat? = nil
+    ) {
         self.range = range
         self.head = head
         self.hanging = hanging
         self.tail = tail
+        self.length = length
     }
 }
 

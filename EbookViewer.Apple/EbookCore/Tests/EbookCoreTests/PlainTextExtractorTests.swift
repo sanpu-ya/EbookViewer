@@ -367,6 +367,25 @@ struct PlainTextExtractorTests {
             == [IndentAnnotation(range: 0..<3, head: 3, hanging: nil)])
     }
 
+    @Test func takesLineLengthFromJizume() {
+        // 青空文庫の「ここから10字詰め」
+        #expect(extract("<div class=\"jizume_10\" style=\"width: 10em\">字詰め</div>").indents
+            == [IndentAnnotation(range: 0..<3, length: 10)])
+        // class だけでも読む
+        #expect(extract("<div class=\"jizume_8\">字詰め</div>").indents
+            == [IndentAnnotation(range: 0..<3, length: 8)])
+        // 字下げと重ねて指定できる
+        #expect(extract("<div style=\"margin-left: 1em; width: 10em\">字詰め</div>").indents
+            == [IndentAnnotation(range: 0..<3, head: 1, length: 10)])
+    }
+
+    @Test func doesNotReadWidthFromOtherProperties() {
+        // line-height の height や max-width の width を字詰めと取り違えない
+        #expect(extract("<div style=\"line-height: 2em\">本文</div>").indents.isEmpty)
+        #expect(extract("<div style=\"max-width: 30em\">本文</div>").indents.isEmpty)
+        #expect(extract("<div style=\"border-width: 1em\">本文</div>").indents.isEmpty)
+    }
+
     @Test func indentCoversTheWholeBlock() {
         let r = extract("<p>本文</p><div class=\"jisage_2\">引用の一行目\n引用の二行目</div><p>本文</p>")
         #expect(r.indents.count == 1)

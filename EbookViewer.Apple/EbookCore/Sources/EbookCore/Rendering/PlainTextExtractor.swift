@@ -87,12 +87,18 @@ public struct IndentAnnotation: Equatable, Sendable {
     public let hanging: Double?
     /// 行末へ寄せるなら、行の終わりに空ける文字数。寄せないなら nil。
     public let tail: Double?
+    /// 1 行に入れる文字数 (青空文庫の「字詰め」)。決めないなら nil。
+    public let length: Double?
 
-    public init(range: Range<Int>, head: Double = 0, hanging: Double? = nil, tail: Double? = nil) {
+    public init(
+        range: Range<Int>, head: Double = 0, hanging: Double? = nil, tail: Double? = nil,
+        length: Double? = nil
+    ) {
         self.range = range
         self.head = head
         self.hanging = hanging
         self.tail = tail
+        self.length = length
     }
 }
 
@@ -296,6 +302,8 @@ public enum PlainTextExtractor {
         case indent(head: Double, hanging: Double?)
         /// 地付き・地寄せ (行の終わりに空ける文字数)。
         case trailing(Double)
+        /// 字詰め (1 行に入れる文字数)。
+        case lineLength(Double)
         /// 割り注。
         case warichu
         /// 罫囲み。
@@ -461,6 +469,8 @@ public enum PlainTextExtractor {
         if name == "jisage" || name == "indent" { return .indent(head: 1, hanging: nil) }
         if let n = step(of: name, prefix: "jisage_") { return .indent(head: Double(n), hanging: nil) }
         if let n = step(of: name, prefix: "jisage") { return .indent(head: Double(n), hanging: nil) }
+        if let n = step(of: name, prefix: "jizume_"), n > 0 { return .lineLength(Double(n)) }
+        if let n = step(of: name, prefix: "jizume"), n > 0 { return .lineLength(Double(n)) }
         if name == "chitsuki" || name == "jitsuki" { return .trailing(0) }
         if let n = step(of: name, prefix: "chitsuki_") { return .trailing(Double(n)) }
         if let n = step(of: name, prefix: "chitsuki") { return .trailing(Double(n)) }
@@ -485,13 +495,37 @@ public enum PlainTextExtractor {
     }
 
     /// `style` から `property` の値を em で読む (負の値も読む)。
+    ///
+    /// `line-height` の中の `height` のように、別のプロパティの一部を拾わないよう、
+    /// プロパティ名の前後が切れていることを確かめる。
     private static func emValue(of property: String, in style: String) -> Double? {
         let lowered = style.lowercased()
-        guard let range = lowered.range(of: property) else { return nil }
-        let value = lowered[range.upperBound...].drop { $0 == ":" || $0 == " " }
-        let number = value.prefix { $0.isNumber || $0 == "." || $0 == "-" }
-        guard let amount = Double(number) else { return nil }
-        return value.dropFirst(number.count).hasPrefix("em") ? amount : nil
+        var from = lowered.startIndex
+        while let range = lowered.range(of: property, range: from..<lowered.endIndex) {
+            from = range.upperBound
+            // 前がつながっていれば別のプロパティ (max-width、line-height など)
+            if range.lowerBound > lowered.startIndex {
+                let before = lowered[lowered.index(before: range.lowerBound)]
+                if before.isLetter || before == "-" { continue }
+            }
+            // 後ろは空白をはさんで ":" が来るはず
+            let rest = lowered[range.upperBound...].drop { $0 == " " }
+            guard rest.hasPrefix(":") else { continue }
+            let value = rest.dropFirst().drop { $0 == " " }
+            let number = value.prefix { $0.isNumber || $0 == "." || $0 == "-" }
+            guard let amount = Double(number), value.dropFirst(number.count).hasPrefix("em") else { continue }
+            return amount
+        }
+        return nil
+    }
+
+    /// `style="width: 10em"` から字詰め (1 行に入れる文字数) を読む。
+    /// 青空文庫の XHTML は横組みなので幅だが、縦組みなら高さで書かれることもある。
+    static func lineLength(forStyle style: String) -> Double? {
+        for property in ["width", "height"] {
+            if let value = emValue(of: property, in: style), value > 0 { return value }
+        }
+        return nil
     }
 
     /// `style="writing-mode: horizontal-tb"` から、縦組みの中の横組みを読む。
@@ -1036,14 +1070,22 @@ public enum PlainTextExtractor {
                 sizes.append(SizeAnnotation(range: range, scale: scale))
             }
             let styleIndent = PlainTextExtractor.indent(forStyle: open.style)
-            if let styleIndent {
+            let styleLength = PlainTextExtractor.lineLength(forStyle: open.style)
+            if styleIndent != nil || styleLength != nil {
                 indents.append(IndentAnnotation(
-                    range: range, head: styleIndent.head, hanging: styleIndent.hanging))
+                    range: range, head: styleIndent?.head ?? 0, hanging: styleIndent?.hanging,
+                    length: styleLength))
             }
             // class で指定されていればそれに従う (青空文庫の注記から変換されたもの)。
             // 青空文庫の HTML は class と style の両方を持つので、字下げは style を優先する
             var decorations = PlainTextExtractor.decorations(forClass: open.className)
-                .filter { if case .indent = $0, styleIndent != nil { return false } else { return true } }
+                .filter {
+                    switch $0 {
+                    case .indent: return styleIndent == nil
+                    case .lineLength: return styleLength == nil
+                    default: return true
+                    }
+                }
             if PlainTextExtractor.isHorizontal(forStyle: open.style), !decorations.contains(.horizontal) {
                 decorations.append(.horizontal)
             }
@@ -1051,7 +1093,7 @@ public enum PlainTextExtractor {
                 for decoration in decorations { apply(decoration, to: range, tag: open.tag) }
                 return
             }
-            if styleIndent != nil { return }
+            if styleIndent != nil || styleLength != nil { return }
             // 見出しは class が無くても大きさを変える
             if let scale = PlainTextExtractor.headingSizes[open.tag] {
                 if PlainTextExtractor.sizeScale(forStyle: open.style) == nil {
@@ -1102,6 +1144,8 @@ public enum PlainTextExtractor {
                 indents.append(IndentAnnotation(range: range, head: head, hanging: hanging))
             case .trailing(let tail):
                 indents.append(IndentAnnotation(range: range, tail: tail))
+            case .lineLength(let length):
+                indents.append(IndentAnnotation(range: range, length: length))
             case .warichu:
                 warichu.append(range)
             case .box(let style):
@@ -1326,7 +1370,8 @@ public enum PlainTextExtractor {
             let shiftedIndents = indents.compactMap { annotation -> IndentAnnotation? in
                 guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
                 return IndentAnnotation(
-                    range: range, head: annotation.head, hanging: annotation.hanging, tail: annotation.tail)
+                    range: range, head: annotation.head, hanging: annotation.hanging,
+                    tail: annotation.tail, length: annotation.length)
             }
             let shiftedShifts = shifts.compactMap { annotation -> ShiftAnnotation? in
                 guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }

@@ -547,6 +547,52 @@ struct StyleTests {
         #expect(abs(label.context.runs[3].frame.minY - 20) < 0.5)
     }
 
+    @Test func lineLengthShortensTheLine() {
+        // 字詰め: 1 行に入る文字数を決める。1 行 10 文字ぶんの高さに 4 字詰めを指定する
+        let size = CGSize(width: 400, height: 200)
+        let text = "あいうえおかきくけこさしすせそ"
+        let plain = makeLabel(text, size: size)
+        #expect(plain.layoutedLineCount == 2)
+        let packed = makeLabel(
+            text, indents: [STIndentAnnotation(range: 0..<text.count, length: 4)], size: size)
+        // どの行も 4 文字までで折り返す
+        for line in 0..<packed.layoutedLineCount {
+            let runs = packed.context.runs.filter { $0.line == line }
+            #expect(runs.count <= 4)
+            #expect(runs.last!.frame.maxY <= 80.5)
+        }
+        #expect(packed.layoutedLineCount == 4)
+    }
+
+    @Test func lineLengthIsMeasuredFromTheIndent() {
+        // 字下げと組み合わせると、字下げのあとから字詰めのぶんを数える。
+        // 2 字下げ + 3 字詰めなら、どの行も 2 文字目から 4 文字目までに収まる
+        let size = CGSize(width: 400, height: 200)
+        let text = "あいうえおかきくけこ"
+        let label = makeLabel(
+            text, indents: [STIndentAnnotation(range: 0..<text.count, head: 2, length: 3)], size: size)
+        #expect(label.layoutedLineCount > 1)
+        var reachesTheEnd = false
+        for line in 0..<label.layoutedLineCount {
+            let runs = label.context.runs.filter { $0.line == line }
+            #expect(abs(runs.first!.frame.minY - 40) < 0.5)
+            #expect(runs.last!.frame.maxY <= 100.5)
+            if runs.last!.frame.maxY > 99.5 { reachesTheEnd = true }
+        }
+        // 短くしすぎてもいない
+        #expect(reachesTheEnd)
+    }
+
+    @Test func lineLengthDoesNotReachBeyondTheView() {
+        // 表示領域より長い字詰めを指定しても、表示領域からははみ出さない
+        let size = CGSize(width: 400, height: 100)
+        let text = "あいうえおかきくけこ"
+        let plain = makeLabel(text, size: size)
+        let wide = makeLabel(
+            text, indents: [STIndentAnnotation(range: 0..<text.count, length: 40)], size: size)
+        #expect(wide.layoutedLineCount == plain.layoutedLineCount)
+    }
+
     @Test func trailingAlignmentPushesTheLineToTheEnd() {
         // 地付き: 行の終わりにそろえる
         let size = CGSize(width: 400, height: 200)

@@ -104,7 +104,7 @@ final class TextViewCoordinator: TextBridge {
         label.indentAnnotations = content.indents.map {
             STIndentAnnotation(
                 range: $0.range, head: $0.head, hanging: $0.hanging.map { CGFloat($0) },
-                tail: $0.tail.map { CGFloat($0) })
+                tail: $0.tail.map { CGFloat($0) }, length: $0.length.map { CGFloat($0) })
         }
         label.lineAnnotations = content.lines.map {
             STLineAnnotation(range: $0.range, style: Self.lineStyle($0.style), position: Self.linePosition($0.position))
