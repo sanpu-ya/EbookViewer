@@ -27,6 +27,8 @@ open class STFontManager {
     ]
     private var possibleFontNames = [String]()
     private var possibleScripts = [STScript]()
+    /// システムに探してもらった書体の font ID (EbookViewer)。refresh のたびに捨てる。
+    private var fallbackFontIds = [Character: Int]()
     
     // Font scale
     private var scriptFontScales: [STScript: CGFloat] = [
@@ -55,29 +57,33 @@ extension STFontManager {
     
     func fontId(char: Character) -> Int {
         // Get script
-        guard let script = char.unicodeScalars.first?.script else {
-            // Use default font ID
-            return 0
-        }
-        
+        let script = char.unicodeScalars.first?.script
+
         // Decide font ID
-        let fontNames = scriptFontNames[script] ?? []
-        for fontName in fontNames {
-            let ctFont = CTFontCreateWithName(fontName as CFString, 17, nil)
-            let chars = uniChars(char: char)
-            var glyph: CGGlyph = 0
-            if CTFontGetGlyphsForCharacters(ctFont, chars, &glyph, chars.count), 
-                glyph > 0, 
-                let index = fontId(name: fontName, script: script)
-            {
-                return index
-            }
+        if let script, let index = fontId(char: char, script: script) { return index }
+
+        // その文字種のフォントに無ければ、ほかの文字種のフォントも試す (EbookViewer)。
+        // 記号のように、ひとつの書体では足りない文字があるため
+        for other in STScript.allCases where other != script {
+            if let index = fontId(char: char, script: other) { return index }
         }
-        
+
+        // それでも無ければ、システムに書体を探してもらう (EbookViewer)
+        if let index = fallbackFontId(char: char, script: script) { return index }
+
         // Use default font ID
         return 0
     }
-    
+
+    /// その文字種のフォントのうち、この文字を描けるものの font ID (EbookViewer)。
+    private func fontId(char: Character, script: STScript) -> Int? {
+        for fontName in scriptFontNames[script] ?? [] {
+            guard Self.hasGlyph(char: char, fontName: fontName) else { continue }
+            if let index = fontId(name: fontName, script: script) { return index }
+        }
+        return nil
+    }
+
     /// 名前と文字種の両方が合う font ID (EbookViewer)。
     ///
     /// upstream は名前だけで引いていたが、同じフォントを 2 つの文字種に使う
@@ -85,6 +91,59 @@ extension STFontManager {
     /// すると縦書きでラテン文字あつかいになり、字が横に倒れてしまう。
     private func fontId(name: String, script: STScript) -> Int? {
         possibleFontNames.indices.first { possibleFontNames[$0] == name && possibleScripts[$0] == script }
+    }
+
+    /// 名前で引いたフォントが、この文字のグリフを持っているか (EbookViewer)。
+    ///
+    /// `CTFontCreateWithName` は名前が見つからないと黙って別のフォントを返すので、
+    /// 入っていない書体を「あった」と思い込まないよう、書体そのものも確かめる。
+    /// そうしないと、取れたグリフ番号が別の書体のものになり、描くと違う字が出る。
+    static func hasGlyph(char: Character, fontName: String) -> Bool {
+        let ctFont = CTFontCreateWithName(fontName as CFString, 17, nil)
+        guard isSameFont(ctFont, named: fontName) else { return false }
+        // その書体がほんとうに持っている文字か。絵文字の書体は、持っていない文字にも
+        // 同じ 1 つのグリフ (豆腐) を返すことがあるので、グリフ番号だけでは足りない
+        let covered = CTFontCopyCharacterSet(ctFont) as CharacterSet
+        guard char.unicodeScalars.allSatisfy({ covered.contains($0) }) else { return false }
+        let chars = uniChars(char: char)
+        guard !chars.isEmpty else { return false }
+        // サロゲートペアは 2 つの UTF-16 から 1 つのグリフになり、戻り値は false になるので、
+        // 戻り値ではなく先頭のグリフを見る (upstream は 1 つぶんの領域に chars.count 個
+        // 書き込ませていた)
+        var glyphs = [CGGlyph](repeating: 0, count: chars.count)
+        _ = CTFontGetGlyphsForCharacters(ctFont, chars, &glyphs, chars.count)
+        return glyphs[0] > 0
+    }
+
+    /// 作られたフォントが、頼んだ書体そのものか (PostScript 名かファミリー名が合うか)。
+    private static func isSameFont(_ font: CTFont, named fontName: String) -> Bool {
+        let wanted = fontName.lowercased()
+        if (CTFontCopyPostScriptName(font) as String).lowercased() == wanted { return true }
+        if (CTFontCopyFamilyName(font) as String).lowercased() == wanted { return true }
+        return false
+    }
+
+    /// どの書体にも無い文字を、システムに探してもらう (EbookViewer)。
+    /// 見つかった書体は font ID の一覧に足して、以降は同じ ID で引けるようにする。
+    private func fallbackFontId(char: Character, script: STScript?) -> Int? {
+        if let cached = fallbackFontIds[char] { return cached }
+        let text = String(char) as CFString
+        let base = CTFontCreateWithName(defaultFontName as CFString, 17, nil)
+        let found = CTFontCreateForString(base, text, CFRange(location: 0, length: CFStringGetLength(text)))
+        let name = CTFontCopyPostScriptName(found) as String
+        guard Self.hasGlyph(char: char, fontName: name) else { return nil }
+        // 文字種が分からない記号は、縦書きで倒さずに正立させたいので日本語として扱う
+        let script = script ?? .japanese
+        let index: Int
+        if let existing = fontId(name: name, script: script) {
+            index = existing
+        } else {
+            possibleFontNames.append(name)
+            possibleScripts.append(script)
+            index = possibleFontNames.count - 1
+        }
+        fallbackFontIds[char] = index
+        return index
     }
     
     func ctFont(fontId: Int, size: CGFloat, isClockwise: Bool = false, style: STTextStyle = []) -> CTFont {
@@ -249,6 +308,7 @@ extension STFontManager {
         }
         self.possibleFontNames = possibleFontNames
         self.possibleScripts = possibleScripts
+        fallbackFontIds = [:]
     }
 }
 
