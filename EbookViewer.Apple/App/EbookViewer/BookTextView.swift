@@ -87,7 +87,7 @@ final class TextViewCoordinator: TextBridge {
             var style: STTextStyle = []
             if $0.style.contains(.bold) { style.insert(.bold) }
             if $0.style.contains(.italic) { style.insert(.italic) }
-            return STStyleAnnotation(range: $0.range, style: style)
+            return STStyleAnnotation(range: $0.range, style: style, removes: $0.removes)
         }
         label.tateChuYokoRanges = content.tateChuYoko
         label.horizontalRanges = content.horizontal

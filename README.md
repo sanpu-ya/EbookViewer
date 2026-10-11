@@ -121,6 +121,35 @@ segment break transformation rules と同じく空白にせず詰めます。`id
 | `yokogumi` / `yoko` | 縦組み中の横組み (ブロックなら 1 ページを使い、行の中なら縦中横) |
 | `kaicho` / `kaipage` / `kaimihiraki` / `kaidan` | 改丁・改ページ・改見開き・改段 (そこから新しいページを始める) |
 
+[電書連 (電書協) EPUB 3 制作ガイド](https://www.dpfj.or.jp/) の CSS が定める class も読み取ります。
+見た目を表す語をそのまま class 名にした体系で、`style-standard.css` / `style-advance.css` に
+指定があるものです。
+
+| class | 表示 |
+|---|---|
+| `em-sesame` `em-sesame-open` `em-dot` `em-dot-open` `em-circle` `em-circle-open` `em-double-circle` `em-double-circle-open` `em-triangle` `em-triangle-open` | 傍点 (ゴマ ﹅ 白ゴマ ﹆ 小黒丸 • 小白丸 ◦ 黒丸 ● 白丸 ○ 蛇の目 ◉ 二重丸 ◎ 黒三角 ▲ 白三角 △) |
+| `em-line` / `em-line-outside` | 傍線 (縦組みでは右) / 左傍線 |
+| `line-through` | 取り消し線 |
+| `bold` / `italic` | 太字 / 斜体 |
+| `font-weight-normal` / `font-style-normal` | 入れ子の中で太字・斜体を元に戻す |
+| `font-120per` / `font-1em20` | 文字サイズ (120% / 1.20em) |
+| `start-2em` / `end-2em50` | 行頭の空き / 行末の空き (論理方向) |
+| `indent-1em` / `h-indent-1em` | 1 行目だけの字下げ / ぶら下げ (折り返した行だけ下げる) |
+| `measure-10em` / `max-measure-20em` | 字詰め |
+| `align-center` / `block-align-center` | 中央ぞろえ |
+| `align-end` / `align-right` | 地寄せ |
+| `tcy` / `upright-1` | 縦中横 |
+| `super` / `sub` / `valign-super` / `valign-sub` | 上付き・下付き |
+| `kunten` / `kunten-okuri` | 返り点 / 訓点送り仮名 |
+| `kogaki` | 小書き (75%) |
+| `k-solid` `k-dashed` `k-dotted` `k-double` | 罫囲み (四方を囲むもの) |
+| 上記 + `-before` / `-after` / `-right` / `-left` | 1 本だけの罫は傍線・左傍線にする |
+| `pagebreak` / `pagebreak-before` / `pagebreak-both` | 改ページ (後ろ / 手前 / 両方) |
+
+組方向は OPF の `page-progression-direction` から決まるので、`vrtl` / `hltr` の class は見ていません。
+色・背景・回り込み・行間など、stone_engine で表せない指定は読み飛ばします。行が進む向きの罫
+(縦組みの上下) も引けないので読み飛ばします。
+
 `<h1>`〜`<h6>` と `style="font-size: 140%"` (`1.4em` も) からも大きさを読みます。字下げは
 `style="margin-left: 3em"` (縦書きの `margin-right`、`text-indent` も)、字詰めは
 `style="width: 10em"` (`height` も) から読みます (`line-height` や `max-width` のような、
@@ -344,6 +373,7 @@ WebView 表示については、見本の本を WKWebView に実際に組ませ�
 - 横組みの取り出し (ブロックは横組み、行の中は縦中横、`writing-mode` の style)
 - 改ページの取り出し (`kaipage` などの class、`page-break-before` / `page-break-after` の style、本文の端では作らないこと)
 - 空白ページ・中央ぞろえ・同行見出し・訓点の取り出し (改ページを 2 つ続けたとき、`text-align` の style、見出しが本文と同じ行に残ること、返り点と送り仮名の寄せる側)
+- 電書連の class の取り出し (傍点 10 種、傍線と左傍線、太字・斜体とその取り消し、`font-120per` / `font-1em20`、`start-` / `end-` / `indent-` / `h-indent-` / `measure-`、中央ぞろえと地寄せ、訓点、罫囲みと 1 本罫、`pagebreak` の前後)
 - エラー文言の訳 (実行環境の言語の表のとおりに引けること、en と ja で鍵がそろい ja が訳されていること)
 - STLabel のページ分割 (縦書き / 横書きの 1 ページの行数、総ページ数、文字位置からのページ算出) と、実際にグリフが描かれること
 - STLabel のルビ (縦書きなら親文字の右・横書きなら上に付くこと、中央そろえ、行またぎの分割、行からはみ出さないこと、ページ追従)

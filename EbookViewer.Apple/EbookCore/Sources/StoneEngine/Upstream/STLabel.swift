@@ -883,8 +883,11 @@ open class STLabel: STPlatformView {
             let lower = max(0, annotation.range.lowerBound)
             let upper = min(styles.count, annotation.range.upperBound)
             guard lower < upper else { continue }
-            // 範囲が重なっていたら重ねがけにする
-            for i in lower..<upper { styles[i].formUnion(annotation.style) }
+            // 範囲が重なっていたら重ねがけにする。取り消しの指定は、そのぶんを外す
+            for i in lower..<upper {
+                if annotation.removes { styles[i].subtract(annotation.style) }
+                else { styles[i].formUnion(annotation.style) }
+            }
         }
         return styles
     }

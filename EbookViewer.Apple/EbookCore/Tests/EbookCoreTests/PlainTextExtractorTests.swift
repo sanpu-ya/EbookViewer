@@ -420,6 +420,88 @@ struct PlainTextExtractorTests {
             == [SizeAnnotation(range: 1..<2, scale: 0.6)])
     }
 
+    // MARK: - 電書連 EPUB 3 制作ガイドの class
+
+    @Test func takesDpfjEmphasisAndLines() {
+        #expect(extract("<p><span class=\"em-sesame\">傍点</span></p>").emphasis
+            == [EmphasisAnnotation(range: 0..<2, mark: "\u{FE45}")])
+        #expect(extract("<p><span class=\"em-circle-open\">傍点</span></p>").emphasis
+            == [EmphasisAnnotation(range: 0..<2, mark: "\u{25CB}")])
+        // 縦組みでは em-line が右 (傍線)、em-line-outside が左
+        #expect(extract("<p><span class=\"em-line\">傍線</span></p>").lines
+            == [LineAnnotation(range: 0..<2, style: .solid, position: .underline)])
+        #expect(extract("<p><span class=\"em-line-outside\">左</span></p>").lines
+            == [LineAnnotation(range: 0..<1, style: .solid, position: .overline)])
+        #expect(extract("<p><span class=\"line-through\">消</span></p>").lines
+            == [LineAnnotation(range: 0..<1, style: .solid, position: .strikethrough)])
+    }
+
+    @Test func takesDpfjStyleAndSize() {
+        #expect(extract("<p><span class=\"bold\">太</span></p>").styles
+            == [StyleAnnotation(range: 0..<1, style: .bold)])
+        // 入れ子の中で元に戻す
+        let reset = extract("<p><span class=\"bold\">太<span class=\"font-weight-normal\">並</span></span></p>")
+        #expect(reset.styles == [
+            StyleAnnotation(range: 1..<2, style: .bold, removes: true),
+            StyleAnnotation(range: 0..<2, style: .bold),
+        ])
+        // font-120per と font-1em20 はどちらも 1.2 倍
+        #expect(extract("<p><span class=\"font-120per\">大</span></p>").sizes
+            == [SizeAnnotation(range: 0..<1, scale: 1.2)])
+        #expect(extract("<p><span class=\"font-1em20\">大</span></p>").sizes
+            == [SizeAnnotation(range: 0..<1, scale: 1.2)])
+        #expect(extract("<p><span class=\"font-0em80\">小</span></p>").sizes
+            == [SizeAnnotation(range: 0..<1, scale: 0.8)])
+    }
+
+    @Test func takesDpfjLayoutClasses() {
+        // 行頭・行末の空き
+        #expect(extract("<div class=\"start-2em\">字下げ</div>").indents
+            == [IndentAnnotation(range: 0..<3, head: 2)])
+        #expect(extract("<div class=\"end-2em50\">字上げ</div>").indents
+            == [IndentAnnotation(range: 0..<3, tail: 2.5)])
+        // 1 行目だけの字下げと、ぶら下げ
+        #expect(extract("<div class=\"indent-1em\">字下げ</div>").indents
+            == [IndentAnnotation(range: 0..<3, head: 1, hanging: 0)])
+        #expect(extract("<div class=\"h-indent-1em\">ぶら下げ</div>").indents
+            == [IndentAnnotation(range: 0..<4, head: 0, hanging: 1)])
+        // 字詰めと中央ぞろえ
+        #expect(extract("<div class=\"measure-10em\">字詰め</div>").indents
+            == [IndentAnnotation(range: 0..<3, length: 10)])
+        #expect(extract("<div class=\"align-center\">中央</div>").indents
+            == [IndentAnnotation(range: 0..<2, centered: true)])
+        #expect(extract("<div class=\"align-end\">地寄せ</div>").indents
+            == [IndentAnnotation(range: 0..<3, tail: 0)])
+    }
+
+    @Test func takesDpfjKuntenAndSuperscript() {
+        #expect(extract("<p>學<span class=\"kunten\">レ</span></p>").shifts
+            == [ShiftAnnotation(range: 1..<2, position: .under)])
+        #expect(extract("<p>學<span class=\"kunten-okuri\">ビ</span></p>").shifts
+            == [ShiftAnnotation(range: 1..<2, position: .over)])
+        #expect(extract("<p>x<span class=\"super\">2</span></p>").shifts
+            == [ShiftAnnotation(range: 1..<2, position: .over)])
+        // super / sub は青空文庫の上付き・下付きと同じ class 名なので、同じ大きさにそろえる
+        #expect(extract("<p>x<span class=\"sub\">2</span></p>").sizes
+            == [SizeAnnotation(range: 1..<2, scale: 0.6)])
+        #expect(extract("<p>x<span class=\"valign-super\">2</span></p>").shifts
+            == [ShiftAnnotation(range: 1..<2, position: .over)])
+    }
+
+    @Test func takesDpfjBordersAndPageBreaks() {
+        // 四方を囲む罫は罫囲み、前後 (縦組みの右左) の 1 本は傍線にする
+        #expect(extract("<p><span class=\"k-solid\">囲み</span></p>").boxes
+            == [LineAnnotation(range: 0..<2, style: .solid)])
+        #expect(extract("<p><span class=\"k-double k-red\">囲み</span></p>").boxes
+            == [LineAnnotation(range: 0..<2, style: .double)])
+        #expect(extract("<p><span class=\"k-solid-before\">右</span></p>").lines
+            == [LineAnnotation(range: 0..<1, style: .solid, position: .underline)])
+        #expect(extract("<p><span class=\"k-dotted-startend\">上下</span></p>").lines.isEmpty)
+        // pagebreak は page-break-after、pagebreak-before は手前
+        #expect(breakChars("<div class=\"pagebreak\"><p>前</p></div><p>後</p>") == ["後"])
+        #expect(breakChars("<p>前</p><div class=\"pagebreak-before\"><p>後</p></div>") == ["後"])
+    }
+
     @Test func takesIndentFromAozoraClasses() {
         #expect(extract("<div class=\"jisage_3\">字下げ</div>").indents
             == [IndentAnnotation(range: 0..<3, head: 3)])

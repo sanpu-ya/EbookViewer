@@ -32,10 +32,13 @@ public struct STStyleAnnotation: Equatable, Sendable {
     /// 範囲 (STLabel.text の Character 単位、0 始まり)。
     public var range: Range<Int>
     public var style: STTextStyle
+    /// 字面を足すのではなく取り消すか (入れ子の中で太字・斜体を元に戻すのに使う)。
+    public var removes: Bool
 
-    public init(range: Range<Int>, style: STTextStyle) {
+    public init(range: Range<Int>, style: STTextStyle, removes: Bool = false) {
         self.range = range
         self.style = style
+        self.removes = removes
     }
 }
 

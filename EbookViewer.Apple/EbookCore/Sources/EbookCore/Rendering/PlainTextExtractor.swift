@@ -41,10 +41,13 @@ public struct StyleAnnotation: Equatable, Sendable {
     /// 範囲 (`ExtractedText.text` の Character 単位、0 始まり)。
     public let range: Range<Int>
     public let style: TextStyle
+    /// 字面を足すのではなく取り消すか (電書連の `font-weight-normal` など)。
+    public let removes: Bool
 
-    public init(range: Range<Int>, style: TextStyle) {
+    public init(range: Range<Int>, style: TextStyle, removes: Bool = false) {
         self.range = range
         self.style = style
+        self.removes = removes
     }
 }
 
@@ -282,12 +285,17 @@ public enum PlainTextExtractor {
     /// 字下げ・地付きがかかるブロック要素。
     static let indentContainerTags: Set<String> = ["div", "p", "blockquote", "li", "dd"]
 
-    /// 改ページを表す class。青空文庫の「改丁」「改ページ」「改見開き」「改段」と、
+    /// 手前で改ページする class。青空文庫の「改丁」「改ページ」「改見開き」「改段」と、
     /// 変換器がよく使う名前。`__ev-pagebreak` は MOBI の `<mbp:pagebreak>` を変換したもの。
+    /// `pagebreak-before` / `pagebreak-both` は電書連の class。
     static let pageBreakClasses: Set<String> = [
         "kaicho", "kaipage", "kaimihiraki", "kaidan",
-        "pagebreak", "page-break", "newpage", "__ev-pagebreak",
+        "page-break", "newpage", "__ev-pagebreak",
+        "pagebreak-before", "pagebreak-both",
     ]
+
+    /// 後ろで改ページする class (電書連の `pagebreak` は page-break-after)。
+    static let pageBreakAfterClasses: Set<String> = ["pagebreak", "pagebreak-both"]
 
     /// `style="page-break-before: always"` などから改ページを読む。
     /// `before` が false なら `page-break-after` / `break-after` を見る。
@@ -349,6 +357,8 @@ public enum PlainTextExtractor {
         case horizontal
         /// 太字・斜体。
         case style(TextStyle)
+        /// 太字・斜体の取り消し (入れ子の中で元に戻す)。
+        case styleOff(TextStyle)
     }
 
     /// 圏点に使う記号。青空文庫の傍点の種類に対応する。
@@ -368,6 +378,10 @@ public enum PlainTextExtractor {
         static let fisheye = "\u{25C9}"
         /// ばつ傍点。
         static let saltire = "\u{00D7}"
+        /// 小さな黒丸 (CSS の filled dot)。
+        static let bullet = "\u{2022}"
+        /// 小さな白丸 (CSS の open dot)。
+        static let openBullet = "\u{25E6}"
     }
 
     /// class 名から文字の修飾を決める。複数の語を含む class でも拾えるよう、語ごとに見る。
@@ -382,8 +396,125 @@ public enum PlainTextExtractor {
         if let side = shiftSide(forClassName: name) {
             return [.size(superscriptScale), .shift(side)]
         }
-        guard let decoration = decoration(forClassName: name) else { return [] }
-        return [decoration]
+        if let decoration = decoration(forClassName: name) { return [decoration] }
+        return dpfjDecorations(forClassName: name)
+    }
+
+    // MARK: - 電書連 (電書協) EPUB 3 制作ガイドの class
+
+    /// 電書連 EPUB 3 制作ガイド (https://www.dpfj.or.jp/) の CSS が定める class を読む。
+    ///
+    /// 青空文庫の注記と違い、見た目を表す語をそのまま class 名にした体系で、
+    /// `style-standard.css` / `style-advance.css` に実際の指定がある。ここでは
+    /// stone_engine で表せるものだけを拾う (色・背景・回り込みなどは拾わない)。
+    static func dpfjDecorations(forClassName name: String) -> [Decoration] {
+        // 傍点
+        if let mark = dpfjEmphasisMark(forClassName: name) {
+            return [.emphasis(mark: mark, position: .over)]
+        }
+        // 罫 (囲み・傍線)
+        if let border = dpfjBorder(forClassName: name) { return border }
+        // 文字の大きさ (font-120per / font-1em20)
+        if let scale = dpfjFontScale(forClassName: name) { return [.size(scale)] }
+        // 字下げ・字詰めなど、行の組み方 (start-2em / end-2em / indent-1em / h-indent-1em / measure-10em)
+        if let layout = dpfjLayout(forClassName: name) { return layout }
+
+        switch name {
+        // 傍線。縦組みでは em-line が右 (CSS の overline)、em-line-outside が左
+        case "em-line": return [.line(style: .solid, position: .underline)]
+        case "em-line-outside": return [.line(style: .solid, position: .overline)]
+        case "line-through": return [.line(style: .solid, position: .strikethrough)]
+        case "bold": return [.style(.bold)]
+        case "italic": return [.style(.italic)]
+        case "font-weight-normal": return [.styleOff(.bold)]
+        case "font-style-normal": return [.styleOff(.italic)]
+        // 訓点
+        case "kunten": return [.size(0.67), .shift(.under)]
+        case "kunten-okuri": return [.size(0.67), .shift(.over)]
+        case "kogaki": return [.size(0.75)]
+        case "upright-1": return [.tateChuYoko]
+        case "align-center", "block-align-center": return [.centered]
+        case "align-end", "align-right": return [.trailing(0)]
+        default: return []
+        }
+    }
+
+    private static func dpfjEmphasisMark(forClassName name: String) -> String? {
+        switch name {
+        case "em-sesame": return EmphasisMark.sesame
+        case "em-sesame-open": return EmphasisMark.openSesame
+        case "em-dot": return EmphasisMark.bullet
+        case "em-dot-open": return EmphasisMark.openBullet
+        case "em-circle": return EmphasisMark.dot
+        case "em-circle-open": return EmphasisMark.openDot
+        case "em-double-circle": return EmphasisMark.fisheye
+        case "em-double-circle-open": return EmphasisMark.doubleCircle
+        case "em-triangle": return EmphasisMark.triangle
+        case "em-triangle-open": return EmphasisMark.openTriangle
+        default: return nil
+        }
+    }
+
+    /// `font-120per` (120%) と `font-1em20` (1.20em)。
+    private static func dpfjFontScale(forClassName name: String) -> Double? {
+        if name.hasPrefix("font-"), name.hasSuffix("per"), let value = Int(name.dropFirst(5).dropLast(3)) {
+            return value > 0 ? Double(value) / 100 : nil
+        }
+        return emSuffix(of: name, prefix: "font-")
+    }
+
+    /// 行の組み方。論理方向の class なので、縦組みでも横組みでもそのまま使える。
+    private static func dpfjLayout(forClassName name: String) -> [Decoration]? {
+        // 行頭の空き
+        if let value = emSuffix(of: name, prefix: "start-") { return [.indent(head: value, hanging: nil)] }
+        if let value = emSuffix(of: name, prefix: "m-start-") { return [.indent(head: value, hanging: nil)] }
+        if let value = emSuffix(of: name, prefix: "p-start-") { return [.indent(head: value, hanging: nil)] }
+        // 行末の空き
+        if let value = emSuffix(of: name, prefix: "end-") { return [.trailing(value)] }
+        if let value = emSuffix(of: name, prefix: "m-end-") { return [.trailing(value)] }
+        // 1 行目だけの字下げ (text-indent)。折り返した行は下げないので hanging は 0
+        if let value = emSuffix(of: name, prefix: "indent-") { return [.indent(head: value, hanging: 0)] }
+        // ぶら下げ (1 行目は下げず、折り返した行を下げる)
+        if let value = emSuffix(of: name, prefix: "h-indent-") { return [.indent(head: 0, hanging: value)] }
+        // 字詰め
+        if let value = emSuffix(of: name, prefix: "measure-") { return [.lineLength(value)] }
+        if let value = emSuffix(of: name, prefix: "max-measure-") { return [.lineLength(value)] }
+        return nil
+    }
+
+    /// 罫。囲みにできるのは四方を囲むものだけで、前後 (縦組みの右左) の 1 本は傍線にする。
+    private static func dpfjBorder(forClassName name: String) -> [Decoration]? {
+        let styles: [(String, LineStyle)] = [
+            ("k-solid", .solid), ("k-dashed", .dashed), ("k-dotted", .dotted), ("k-double", .double),
+        ]
+        for (prefix, style) in styles {
+            guard name == prefix || name.hasPrefix(prefix + "-") else { continue }
+            let sides = name == prefix ? "" : String(name.dropFirst(prefix.count + 1))
+            switch sides {
+            case "": return [.box(style: style)]
+            // 縦組みでは before が右、after が左 (物理の right / left も同じ)
+            case "before", "right": return [.line(style: style, position: .underline)]
+            case "after", "left": return [.line(style: style, position: .overline)]
+            case "beforeafter", "rightleft":
+                return [.line(style: style, position: .underline),
+                        .line(style: style, position: .overline)]
+            // 行が進む向きの罫 (縦組みの上下) は引けない。色や太さの指定も読み飛ばす
+            default: return []
+            }
+        }
+        return nil
+    }
+
+    /// `start-2em50` のような、em を数で表した接尾辞。`2em50` なら 2.50。
+    private static func emSuffix(of name: String, prefix: String) -> Double? {
+        guard name.hasPrefix(prefix) else { return nil }
+        let rest = name.dropFirst(prefix.count)
+        guard let em = rest.range(of: "em") else { return nil }
+        guard let whole = Int(rest[rest.startIndex..<em.lowerBound]) else { return nil }
+        let fraction = rest[em.upperBound...]
+        if fraction.isEmpty { return Double(whole) }
+        guard fraction.count == 2, let hundredths = Int(fraction) else { return nil }
+        return Double(whole) + Double(hundredths) / 100
     }
 
     /// 上付き・下付きの文字の大きさ。端へ寄せても隣の行とぶつからないよう、
@@ -395,10 +526,10 @@ public enum PlainTextExtractor {
     static func shiftSide(forClassName name: String) -> RubyPosition? {
         switch name {
         // 上付き小文字・行右小書き。訓点送り仮名も親字の右に添える
-        case "superscript", "sup", "upperright", "upr", "gyomigi", "okurigana":
+        case "superscript", "sup", "upperright", "upr", "gyomigi", "okurigana", "super", "valign-super":
             return .over
         // 下付き小文字・行左小書き。返り点は親字の左下に添える
-        case "subscript", "sub", "lowerleft", "swr", "gyohidari", "kaeriten":
+        case "subscript", "sub", "lowerleft", "swr", "gyohidari", "kaeriten", "valign-sub":
             return .under
         default:
             return nil
@@ -1133,8 +1264,12 @@ public enum PlainTextExtractor {
         mutating func endEmphasis(tag: String) {
             guard let index = emphasisStack.lastIndex(where: { $0.tag == tag }) else { return }
             let open = emphasisStack.remove(at: index)
-            // 閉じタグには属性が無いので、開いたときに覚えた style から改ページを見る
-            if PlainTextExtractor.isPageBreak(forStyle: open.style, before: false) { breakPage() }
+            // 閉じタグには属性が無いので、開いたときに覚えた class と style から改ページを見る
+            if PlainTextExtractor.isPageBreak(forStyle: open.style, before: false)
+                || open.className.lowercased().split(whereSeparator: { $0 == " " || $0 == "\t" })
+                    .contains(where: { PlainTextExtractor.pageBreakAfterClasses.contains(String($0)) }) {
+                breakPage()
+            }
             guard let start = open.start, start < count else { return }
             let range = start..<count
 
@@ -1209,6 +1344,8 @@ public enum PlainTextExtractor {
                 lines.append(LineAnnotation(range: range, style: style, position: position))
             case .style(let style):
                 styles.append(StyleAnnotation(range: range, style: style))
+            case .styleOff(let style):
+                styles.append(StyleAnnotation(range: range, style: style, removes: true))
             case .tateChuYoko:
                 tateChuYoko.append(range)
             case .size(let scale):
@@ -1442,7 +1579,7 @@ public enum PlainTextExtractor {
             }
             let shiftedStyles = styles.compactMap { annotation -> StyleAnnotation? in
                 guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
-                return StyleAnnotation(range: range, style: annotation.style)
+                return StyleAnnotation(range: range, style: annotation.style, removes: annotation.removes)
             }
             let shiftedEmphasis = emphasis.compactMap { annotation -> EmphasisAnnotation? in
                 guard let range = shift(annotation.range, by: leading, limit: length) else { return nil }
