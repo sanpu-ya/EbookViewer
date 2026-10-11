@@ -32,9 +32,10 @@
     post({ type: 'error', message: String(e.message || e.error || e) + ' @' + (e.filename || '') + ':' + (e.lineno || 0) });
   });
 
+  var inlineTags = { SPAN: 1, A: 1, RUBY: 1, RT: 1, RB: 1, RP: 1, EM: 1, STRONG: 1, B: 1, I: 1, IMG: 1, BR: 1, SUP: 1, SUB: 1, SMALL: 1, U: 1, S: 1 };
+
   /* page-break-* / break-* を段区切りに変換する (多段組みでは page ブレークが効かないため) */
   function convertPageBreaks() {
-    var inlineTags = { SPAN: 1, A: 1, RUBY: 1, RT: 1, RB: 1, RP: 1, EM: 1, STRONG: 1, B: 1, I: 1, IMG: 1, BR: 1, SUP: 1, SUB: 1, SMALL: 1, U: 1, S: 1 };
     var els = body.getElementsByTagName('*');
     var n = els.length;
     if (n > 40000) { return; }
@@ -49,6 +50,63 @@
       }
       if (ba === 'page' || ba === 'always' || ba === 'left' || ba === 'right' || ba === 'recto' || ba === 'verso') {
         el.classList.add('__ev-break-after');
+      }
+    }
+  }
+
+  /* 青空文庫の字下げ・字詰めを、縦書きでも効くように読み替える。
+
+     青空文庫の XHTML は横組み前提で書かれていて、字下げは margin-left、字詰めは width という
+     物理的なプロパティで表される。縦書きにすると margin-left はページの左端の余白、width は
+     行が積まれる向きの幅になり、行頭の空き・行の長さにならない。そこで、em で直接書かれた
+     これらの指定を論理プロパティ (margin-inline-start / inline-size) へ移す。
+     横組みに戻したときは、元の style 属性をそのまま書き戻す。 */
+  var indentTargets = null;
+
+  function emValue(v) {
+    var m = /^(-?[0-9.]+)em$/.exec(String(v || '').trim());
+    if (!m) { return null; }
+    var n = parseFloat(m[1]);
+    return (isFinite(n) && n > 0) ? n : null;
+  }
+
+  function collectIndentTargets() {
+    if (indentTargets) { return indentTargets; }
+    indentTargets = [];
+    var els = body.getElementsByTagName('*');
+    var n = els.length;
+    if (n > 40000) { return indentTargets; }
+    for (var i = 0; i < n; i++) {
+      var el = els[i];
+      if (inlineTags[el.tagName]) { continue; }
+      var s = el.style;
+      var head = emValue(s.marginLeft) || emValue(s.marginRight)
+        || emValue(s.paddingLeft) || emValue(s.paddingRight);
+      var measure = emValue(s.width);
+      if (head == null && measure == null) { continue; }
+      indentTargets.push({ el: el, head: head, measure: measure, css: el.getAttribute('style') || '' });
+    }
+    return indentTargets;
+  }
+
+  function applyLogicalIndents() {
+    var list = collectIndentTargets();
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      if (!vertical) {
+        t.el.setAttribute('style', t.css);
+        continue;
+      }
+      var s = t.el.style;
+      if (t.head != null) {
+        /* class 側の指定 (.jisage_3 など) も打ち消すので important で 0 にする */
+        s.setProperty('margin-left', '0', 'important');
+        s.setProperty('margin-right', '0', 'important');
+        s.setProperty('margin-inline-start', t.head + 'em', 'important');
+      }
+      if (t.measure != null) {
+        s.setProperty('width', 'auto', 'important');
+        s.setProperty('inline-size', t.measure + 'em', 'important');
       }
     }
   }
@@ -162,6 +220,7 @@
     if (!body) { return; }
     ready = true;
     convertPageBreaks();
+    applyLogicalIndents();
     layout();
     applyInitial();
     post({ type: 'ready', page: page, pages: pages });
@@ -263,7 +322,11 @@
     gotoAnchor: gotoAnchor,
     gotoEnd: function () { goto(pages - 1); },
     relayout: relayout,
-    setVertical: function (v) { vertical = !!v; relayout(); },
+    setVertical: function (v) {
+      vertical = !!v;
+      if (ready) { applyLogicalIndents(); }
+      relayout();
+    },
     info: function () { return { page: page, pages: pages, step: step, vertical: vertical }; }
   };
 
