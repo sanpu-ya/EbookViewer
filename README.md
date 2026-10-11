@@ -225,6 +225,13 @@ iOS では WKWebView のネイティブスクロールを止め、`viewer.js` �
 (サンドボックス内では `~/Library/Containers/com.sanpu-ya.EbookViewer/Data/Library/Application Support/EbookViewer/`)、
 次回同じファイルを開くと復元されます。「最近開いたファイル」はセキュリティスコープ付きブックマークで保持するので、サンドボックス内でも再度開けます。
 
+## 注記の見本
+
+[`Samples/annotations.epub`](EbookViewer.Apple/EbookCore/Tests/EbookCoreTests/Samples/annotations.epub)
+は、stone_engine の組版を目で確かめるための短い EPUB です。4 章あり、それぞれ折り返して字下げ・
+上付き下付き・縦組み中の横組み・字詰めを、くらべるための本文といっしょに並べてあります。
+アプリで開けば実機やシミュレーターでそのまま確認できます (テストからも読んでいます)。
+
 ## ビルド
 
 必要なもの: Xcode 15 以降 (macOS 14 SDK)。
@@ -302,6 +309,7 @@ ZIP は自前の `ZipArchive` と zlib で読みます (Linux では zlib を直
 - 文字サイズの取り出し (青空文庫の段階つきクラス、見出し、インライン style の % と em)
 - 字下げ・地付き・割り注・罫囲みの取り出し (`jisage_N` / `chitsuki_N` / `warichu` / `keigakomi`、margin の style、ブロック全体にかかること)
 - 字詰めの取り出し (`jizume_N` の class、`width` の style、`line-height` や `max-width` を取り違えないこと)
+- 見本の本 ([`Samples/annotations.epub`](EbookViewer.Apple/EbookCore/Tests/EbookCoreTests/Samples/annotations.epub)) から、折り返して字下げ・上付き下付き・横組み・字詰めがひととおり取り出せること
 - 折り返して字下げの取り出し (margin と負の `text-indent` の組、ふつうの字下げと区別されること)
 - 上付き・下付きの取り出し (`superscript` / `subscript` / `upr` / `swr` の class、`<sup>` / `<sub>` のタグ、小さくなることと寄せる側)
 - 横組みの取り出し (ブロックは横組み、行の中は縦中横、`writing-mode` の style)

@@ -8,6 +8,47 @@ struct PlainTextExtractorTests {
         PlainTextExtractor.extract(html: html)
     }
 
+    /// 見本の本 (Samples/annotations.epub) の n 章目を取り出す。
+    private func sampleChapter(_ index: Int) throws -> ExtractedText {
+        let url = Bundle.module.url(
+            forResource: "annotations.epub", withExtension: nil, subdirectory: "Samples")!
+        let book = try BookLoader.load(url: url)
+        let item = book.spine[index]
+        let resource = book.findResource(item.path)!
+        return PlainTextExtractor.extract(try resource.getData(), mediaType: item.mediaType)
+    }
+
+    /// 見本の本から、青空文庫の注記がひととおり取り出せること。
+    /// 章ごとの組み方は StoneEngineTests が見るので、ここでは注記が届くことだけを見る。
+    @Test func readsEveryAnnotationFromTheSampleBook() throws {
+        // 一章: 折り返して字下げ
+        let indents = try sampleChapter(0).indents
+        #expect(indents.contains { $0.head == 2 && $0.hanging == 3 })
+        #expect(indents.contains { $0.head == 0 && $0.hanging == 1 })
+        #expect(indents.contains { $0.head == 3 && $0.hanging == nil })
+
+        // 二章: 上付き・下付き
+        let shifts = try sampleChapter(1).shifts
+        #expect(shifts.contains { $0.position == .over })
+        #expect(shifts.contains { $0.position == .under })
+
+        // 三章: 横組み (ブロックは 1 ページ、行の中は縦中横)
+        let yokogumi = try sampleChapter(2)
+        #expect(yokogumi.horizontal.count == 1)
+        #expect(!yokogumi.tateChuYoko.isEmpty)
+        // ブロックの中の注記も取り出せている
+        let block = yokogumi.horizontal[0]
+        #expect(yokogumi.ruby.contains { block.contains($0.range.lowerBound) })
+        #expect(yokogumi.boxes.contains { block.contains($0.range.lowerBound) })
+
+        // 四章: 字詰め。字下げと重ねた段は、字下げと字詰めが別々の注記になって重なる
+        let jizume = try sampleChapter(3).indents
+        let packed = jizume.filter { $0.length == 10 }
+        #expect(packed.count == 2)
+        let jisage = try #require(jizume.first { $0.head == 2 })
+        #expect(packed.contains { jisage.range.contains($0.range.lowerBound) })
+    }
+
     @Test func stripsTagsAndKeepsBlockBreaks() {
         let r = extract("<html><body><p>一行目</p><p>二行目</p></body></html>")
         #expect(r.text == "一行目\n二行目")
