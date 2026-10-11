@@ -41,6 +41,19 @@ class STParser {
         let style = context.style(at: runs.count)
         let fontSize = context.adjustFontSize * context.sizeScale(at: runs.count)
         
+        // 異体字セレクタのような、それ自体は字を持たない文字 (EbookViewer)。
+        //
+        // 単語で区切ると親字と離れて 1 つの run になることがあり、そのままだと字幅のある
+        // 空白に見えてしまう。電書連 EPUB 3 制作ガイドの「今後の RS に期待する項目」も、
+        // 字形選択子そのものを空白や他の文字として表示しないことを求めている。
+        if char.unicodeScalars.allSatisfy({ $0.properties.isDefaultIgnorableCodePoint }) {
+            return STRun(
+                tokenId: tokenId, tokenRunIndex: tokenRunIndex, fontId: runs.last?.fontId ?? 0,
+                style: style, fontSize: fontSize, char: char, punctuation: .whole, glyph: 0,
+                advance: .zero, boundingRect: .zero, position: .zero, frame: .zero,
+                visibility: .visible, line: 0)
+        }
+        
         // Decide font ID
         let fontId: Int
         if char.isNewline {

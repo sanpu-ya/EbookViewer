@@ -75,6 +75,11 @@ class STLayout {
                 width: 0, 
                 height: context.fontSize)
         }
+        // 字を持たない文字は場所を取らない (EbookViewer)
+        else if context.isZeroWidth(run: context.runs[runId]) {
+            context.runs[runId].position = .init(x: x, y: y)
+            context.runs[runId].frame = .init(x: x, y: y, width: 0, height: 0)
+        }
         // For other
         else {
             // Decide position x and frame width
@@ -161,6 +166,11 @@ class STLayout {
                 y: y, 
                 width: context.fontSize, 
                 height: 0)
+        }
+        // 字を持たない文字は場所を取らない (EbookViewer)
+        else if context.isZeroWidth(run: context.runs[runId]) {
+            context.runs[runId].position = .init(x: x, y: y)
+            context.runs[runId].frame = .init(x: x, y: y, width: 0, height: 0)
         }
         // For clockwise
         else if context.isClockwise(run: context.runs[runId]) {

@@ -65,6 +65,21 @@ struct FontTests {
         #expect(fontName(label, 1) == "HelveticaNeue")
     }
 
+    @Test func variationSelectorsTakeNoSpaceAndAreNotDrawn() {
+        // 異体字セレクタは、単語で区切ると親字と離れた run になる。字幅を持たせると
+        // 空白に見えてしまうので、場所を取らず何も描かないこと
+        let fonts = ["HiraMinProN-W3"]
+        let plain = makeLabel("葛辻邉", japanese: fonts, latin: fonts)
+        let ivs = makeLabel("葛\u{E0100}辻\u{E0100}邉\u{E0101}", japanese: fonts, latin: fonts)
+        // 行の長さが変わらない
+        #expect(ivs.context.runs.last!.frame.maxY == plain.context.runs.last!.frame.maxY)
+        // 字形選択子そのものは描かない
+        #expect(ivs.drawBuckets.reduce(0) { $0 + $1.glyphs.count }
+            == plain.drawBuckets.reduce(0) { $0 + $1.glyphs.count })
+        // 親字はそのまま出る
+        #expect(ivs.context.runs[0].glyph == plain.context.runs[0].glyph)
+    }
+
     @Test func readsGlyphsForCharactersOutsideTheBasicPlane() {
         // サロゲートペア (UTF-16 で 2 つ) でも、1 つめのグリフを見る
         #expect(STFontManager.hasGlyph(char: "𠮟", fontName: "HiraMinProN-W3"))

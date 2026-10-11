@@ -177,6 +177,12 @@ open class STContext {
     // MARK: - Token and run
     //--------------------------------------------------------------//
     
+    /// 字を持たない文字か (異体字セレクタなど)。行の中で場所を取らない (EbookViewer)。
+    /// グリフが引けなかっただけの文字 (豆腐) は字幅を持つので、ここには入らない。
+    public func isZeroWidth(run: STRun) -> Bool {
+        run.glyph == 0 && run.advance.width == 0 && !run.char.isNewline
+    }
+    
     public func isLastInToken(run: STRun) -> Bool {
         // Check token run index
         return run.tokenRunIndex >= tokens[run.tokenId].runIdRange.count - 1

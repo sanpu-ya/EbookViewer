@@ -1097,6 +1097,8 @@ open class STLabel: STPlatformView {
             else {
                 guard !run.isHidden else { continue }
             }
+            // グリフの無い文字 (異体字セレクタなど) は、豆腐を出さずに何も描かない (EbookViewer)
+            guard run.glyph != 0 else { continue }
             let isClockwise = context.isClockwise(run: run)
             let needsToFlip = context.fontManager.needsToFlip(fontId: run.fontId)
 
