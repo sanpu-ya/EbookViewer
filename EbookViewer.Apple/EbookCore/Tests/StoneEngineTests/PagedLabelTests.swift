@@ -43,6 +43,52 @@ struct PagedLabelTests {
         #expect(lastLineOrigin >= -0.5)
     }
 
+    @Test func pageBreakStartsANewPage() {
+        let size = CGSize(width: 400, height: 600)
+        let plain = makeLabel(size: size)
+        // 1 ページに収まる行の途中で改ページを入れる
+        let offset = Self.sample.count / 2
+        let label = makeLabel(size: size)
+        label.pageBreakOffsets = [offset]
+        label.layoutSubviews()
+
+        // 指定した文字の行は、改ページが無ければページの先頭ではない
+        let breakLine = label.context.runs[offset].line
+        if case .text(let plainLines) = plain.pages[plain.page(ofCharacterAt: offset)] {
+            #expect(plainLines.lowerBound != breakLine)
+        } else {
+            Issue.record("本文のページではない")
+        }
+
+        // 改ページを入れると、その行からページが始まる
+        let page = label.page(ofCharacterAt: offset)
+        #expect(page > 0)
+        guard case .text(let lines) = label.pages[page] else {
+            Issue.record("本文のページではない")
+            return
+        }
+        #expect(lines.lowerBound == breakLine)
+        // 手前のページは、改ページの行の手前で終わる
+        guard case .text(let before) = label.pages[page - 1] else {
+            Issue.record("本文のページではない")
+            return
+        }
+        #expect(before.upperBound == lines.lowerBound)
+        // どのページも 1 ページぶんの行数を超えない
+        for content in label.pages {
+            if case .text(let range) = content { #expect(range.count <= label.linesPerPage) }
+        }
+    }
+
+    @Test func pageBreakAtTheVeryStartMakesNoEmptyPage() {
+        let size = CGSize(width: 400, height: 600)
+        let plain = makeLabel(size: size)
+        let label = makeLabel(size: size)
+        label.pageBreakOffsets = [0]
+        label.layoutSubviews()
+        #expect(label.pageCount == plain.pageCount)
+    }
+
     @Test func horizontalDirectionPagesByHeight() {
         let label = makeLabel(size: CGSize(width: 600, height: 400), direction: .lrTb)
         #expect(label.linesPerPage == 11)

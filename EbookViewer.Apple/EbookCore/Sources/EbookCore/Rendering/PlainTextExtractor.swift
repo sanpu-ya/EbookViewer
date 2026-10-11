@@ -194,6 +194,8 @@ public struct ExtractedText: Sendable {
     public let boxes: [LineAnnotation]
     /// 縦組みの中で横組みにするブロック (`<div class="yokogumi">`) の範囲。
     public let horizontal: [Range<Int>]
+    /// 改ページする位置 (`ExtractedText.text` の Character 単位)。その文字から新しいページが始まる。
+    public let pageBreaks: [Int]
     /// `<img>` から取り出した画像。本文には置き場所として全角空白が 1 文字入る。
     public let images: [ImageAnnotation]
 
@@ -211,6 +213,7 @@ public struct ExtractedText: Sendable {
         warichu: [Range<Int>] = [],
         boxes: [LineAnnotation] = [],
         horizontal: [Range<Int>] = [],
+        pageBreaks: [Int] = [],
         images: [ImageAnnotation] = []
     ) {
         self.text = text
@@ -226,6 +229,7 @@ public struct ExtractedText: Sendable {
         self.warichu = warichu
         self.boxes = boxes
         self.horizontal = horizontal
+        self.pageBreaks = pageBreaks
         self.images = images
     }
 }
@@ -274,6 +278,28 @@ public enum PlainTextExtractor {
 
     /// 字下げ・地付きがかかるブロック要素。
     static let indentContainerTags: Set<String> = ["div", "p", "blockquote", "li", "dd"]
+
+    /// 改ページを表す class。青空文庫の「改丁」「改ページ」「改見開き」「改段」と、
+    /// 変換器がよく使う名前。`__ev-pagebreak` は MOBI の `<mbp:pagebreak>` を変換したもの。
+    static let pageBreakClasses: Set<String> = [
+        "kaicho", "kaipage", "kaimihiraki", "kaidan",
+        "pagebreak", "page-break", "newpage", "__ev-pagebreak",
+    ]
+
+    /// `style="page-break-before: always"` などから改ページを読む。
+    /// `before` が false なら `page-break-after` / `break-after` を見る。
+    static func isPageBreak(forStyle style: String, before: Bool) -> Bool {
+        let lowered = style.lowercased()
+        for property in (before ? ["page-break-before", "break-before"] : ["page-break-after", "break-after"]) {
+            guard let range = lowered.range(of: property) else { continue }
+            let value = lowered[range.upperBound...].drop { $0 == ":" || $0 == " " }
+            for keyword in ["always", "page", "left", "right", "recto", "verso", "column"]
+            where value.hasPrefix(keyword) {
+                return true
+            }
+        }
+        return false
+    }
 
     /// ブロックとしてかかる要素か (行の中にかかる `<span>` などと区別する)。
     static func isBlockContainer(tag: String) -> Bool {
@@ -728,6 +754,18 @@ public enum PlainTextExtractor {
         }
         guard !builder.isDropping else { return }
 
+        // 改ページ。class か style で表される。実体は次の文字の位置に残す
+        if !builder.isDropping {
+            let className = (tag.attributes["class"] ?? "").lowercased()
+            let classes = className.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+            let style = tag.attributes["style"] ?? ""
+            // 閉じタグには属性が無いので、page-break-after は endEmphasis 側で見る
+            if !tag.isClose, classes.contains(where: { pageBreakClasses.contains($0) })
+                || isPageBreak(forStyle: style, before: true) {
+                builder.breakPage()
+            }
+        }
+
         // アンカー (目次のリンク先)
         if !tag.isClose {
             for key in ["id", "name"] {
@@ -925,6 +963,9 @@ public enum PlainTextExtractor {
         private var pendingNewlines = 0
         /// 位置が決まるのを待っているアンカー。
         private var pendingAnchors: [String] = []
+        /// 次に出る文字から新しいページを始めるか。
+        private var pendingPageBreak = false
+        private var pageBreaks: [Int] = []
         private var anchors: [String: Int] = [:]
         private var lastCharacter: Character?
         private var droppingTag: String?
@@ -1062,6 +1103,8 @@ public enum PlainTextExtractor {
         mutating func endEmphasis(tag: String) {
             guard let index = emphasisStack.lastIndex(where: { $0.tag == tag }) else { return }
             let open = emphasisStack.remove(at: index)
+            // 閉じタグには属性が無いので、開いたときに覚えた style から改ページを見る
+            if PlainTextExtractor.isPageBreak(forStyle: open.style, before: false) { breakPage() }
             guard let start = open.start, start < count else { return }
             let range = start..<count
 
@@ -1200,6 +1243,14 @@ public enum PlainTextExtractor {
             if anchors[id] == nil { pendingAnchors.append(id) }
         }
 
+        /// ここから新しいページを始める。位置が決まる (= 次の文字が出る) のは append の中。
+        mutating func breakPage() {
+            guard !isDropping, count > 0 else { return }
+            pendingPageBreak = true
+            // ページの変わり目は段落の区切りでもある
+            breakLines(1)
+        }
+
         mutating func breakLines(_ n: Int) {
             guard !isDropping else { return }
             // 先頭の空行は作らない
@@ -1233,6 +1284,11 @@ public enum PlainTextExtractor {
             if !pendingAnchors.isEmpty {
                 for id in pendingAnchors { anchors[id] = count }
                 pendingAnchors.removeAll()
+            }
+            // 改ページも、畳み込んだ改行ではなくこの 1 文字から始める
+            if pendingPageBreak {
+                if pageBreaks.last != count { pageBreaks.append(count) }
+                pendingPageBreak = false
             }
             // 強調の始まりも、畳み込んだ空白ではなく中身の 1 文字目にそろえる
             for i in emphasisStack.indices where emphasisStack[i].start == nil {
@@ -1383,11 +1439,16 @@ public enum PlainTextExtractor {
                 return LineAnnotation(range: range, style: annotation.style)
             }
             let shiftedHorizontal = horizontal.compactMap { shift($0, by: leading, limit: length) }
+            let shiftedPageBreaks = pageBreaks.compactMap { offset -> Int? in
+                let moved = offset - leading
+                return (moved > 0 && moved < length) ? moved : nil
+            }
             return ExtractedText(
                 text: text, anchors: adjusted, ruby: shifted, styles: shiftedStyles,
                 emphasis: shiftedEmphasis, lines: shiftedLines, tateChuYoko: shiftedTateChuYoko,
                 sizes: shiftedSizes, shifts: shiftedShifts, indents: shiftedIndents, warichu: shiftedWarichu,
-                boxes: shiftedBoxes, horizontal: shiftedHorizontal, images: shiftedImages)
+                boxes: shiftedBoxes, horizontal: shiftedHorizontal, pageBreaks: shiftedPageBreaks,
+                images: shiftedImages)
         }
     }
 }

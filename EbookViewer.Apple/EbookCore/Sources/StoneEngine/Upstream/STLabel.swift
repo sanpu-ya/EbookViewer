@@ -271,6 +271,15 @@ open class STLabel: STPlatformView {
         }
     }
 
+    /// 改ページする位置 (text の Character 単位)。その文字が載っている行から新しいページを始める
+    /// (青空文庫の「改丁」「改ページ」「改見開き」「改段」)。
+    open var pageBreakOffsets: [Int] = [] {
+        didSet {
+            guard pageBreakOffsets != oldValue else { return }
+            setNeedsLayout()
+        }
+    }
+
     /// 縦中横にする範囲 (青空文庫の「縦組み中で横に並んだ文字」)。
     /// 横書きでは何も起きない。まとまりが 1 語として切り出されないと横に並ばないので、
     /// 数字や欧文の 2〜3 文字を想定している。
@@ -445,10 +454,20 @@ open class STLabel: STPlatformView {
         }
         var placedBlocks = Set<Int>()
 
+        // 改ページ。その文字が載っている行から新しいページを始める
+        var breakLines = Set<Int>()
+        for offset in pageBreakOffsets where offset > 0 && offset < context.runs.count {
+            breakLines.insert(context.runs[offset].line)
+        }
+
         var pages: [PageContent] = []
         var start = 0
         var line = 0
         while line < lineCount {
+            if breakLines.contains(line), line > start {
+                pages.append(.text(start..<line))
+                start = line
+            }
             if let block = horizontalLines[line] {
                 if line > start { pages.append(.text(start..<line)) }
                 // ブロックの最初の行で、そのブロックのページをまとめて置く
@@ -885,6 +904,7 @@ open class STLabel: STPlatformView {
         var warichuRanges: [Range<Int>]
         var tateChuYokoRanges: [Range<Int>]
         var horizontalRanges: [Range<Int>]
+        var pageBreakOffsets: [Int]
         var allowsRubyOverhang: Bool
         var images: [STImageAnnotation]
     }
@@ -923,6 +943,7 @@ open class STLabel: STPlatformView {
             warichuRanges: warichuRanges,
             tateChuYokoRanges: tateChuYokoRanges,
             horizontalRanges: horizontalRanges,
+            pageBreakOffsets: pageBreakOffsets,
             allowsRubyOverhang: allowsRubyOverhang,
             images: imageAnnotations)
     }

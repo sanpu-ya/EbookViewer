@@ -47,6 +47,12 @@ struct PlainTextExtractorTests {
         #expect(packed.count == 2)
         let jisage = try #require(jizume.first { $0.head == 2 })
         #expect(packed.contains { jisage.range.contains($0.range.lowerBound) })
+
+        // 五章: 改ページ (class からと style から 1 つずつ)
+        let kaipage = try sampleChapter(4)
+        #expect(kaipage.pageBreaks.count == 2)
+        let chars = Array(kaipage.text)
+        #expect(kaipage.pageBreaks.allSatisfy { chars[$0 - 1].isNewline })
     }
 
     @Test func stripsTagsAndKeepsBlockBreaks() {
@@ -449,6 +455,36 @@ struct PlainTextExtractorTests {
         let r = extract("<p>小さく書かれてある<span class=\"yokogumi\">スハフ</span></p>")
         #expect(r.horizontal.isEmpty)
         #expect(r.tateChuYoko == [9..<12])
+    }
+
+    /// 改ページの位置にある文字 (空行の数は要素によって変わるので、文字で見る)。
+    private func breakChars(_ html: String) -> [Character] {
+        let r = extract(html)
+        let chars = Array(r.text)
+        return r.pageBreaks.map { chars[$0] }
+    }
+
+    @Test func takesPageBreakFromClassAndStyle() {
+        // 青空文庫の「改ページ」。前後は段落の区切りにもなる
+        let r = extract("<p>前</p><div class=\"kaipage\"></div><p>後</p>")
+        #expect(r.text == "前\n後")
+        #expect(r.pageBreaks == [2])
+        // 改丁・改見開き・改段も同じ扱い
+        #expect(breakChars("<p>前</p><br class=\"kaicho\"/><p>後</p>") == ["後"])
+        #expect(breakChars("<p>前</p><hr class=\"kaidan\"/><p>後</p>") == ["後"])
+        #expect(breakChars("<p>前</p><div class=\"kaimihiraki\"></div><p>後</p>") == ["後"])
+        // style からも読む
+        #expect(breakChars("<p>前</p><p style=\"page-break-before: always\">後</p>") == ["後"])
+        #expect(breakChars("<p style=\"page-break-after: always\">前</p><p>後</p>") == ["後"])
+        #expect(breakChars("<p>前</p><p style=\"break-before: page\">後</p>") == ["後"])
+    }
+
+    @Test func ignoresPageBreaksWithNothingBeforeOrAfter() {
+        // 本文の頭と終わりの改ページは、空のページを作るだけなので落とす
+        #expect(extract("<div class=\"kaipage\"></div><p>本文</p>").pageBreaks.isEmpty)
+        #expect(extract("<p>本文</p><div class=\"kaipage\"></div>").pageBreaks.isEmpty)
+        // ふつうの div は改ページにしない
+        #expect(extract("<p>前</p><div>中</div><p>後</p>").pageBreaks.isEmpty)
     }
 
     @Test func takesBoxFromClass() {

@@ -48,6 +48,11 @@ body img, body figure, body svg {
   break-before: column !important;
 }
 
+/* 青空文庫の注記から変換された改丁・改ページ・改見開き・改段 */
+.kaicho, .kaipage, .kaimihiraki, .kaidan, .pagebreak, .newpage {
+  break-before: column !important;
+}
+
 .__ev-break-after {
   break-after: column !important;
 }

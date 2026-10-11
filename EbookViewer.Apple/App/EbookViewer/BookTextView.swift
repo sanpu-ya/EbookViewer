@@ -91,6 +91,7 @@ final class TextViewCoordinator: TextBridge {
         }
         label.tateChuYokoRanges = content.tateChuYoko
         label.horizontalRanges = content.horizontal
+        label.pageBreakOffsets = content.pageBreaks
         label.sizeAnnotations = content.sizes.map {
             STSizeAnnotation(range: $0.range, scale: $0.scale)
         }
@@ -126,6 +127,7 @@ final class TextViewCoordinator: TextBridge {
         label.lineAnnotations = []
         label.tateChuYokoRanges = []
         label.horizontalRanges = []
+        label.pageBreakOffsets = []
         label.sizeAnnotations = []
         label.shiftAnnotations = []
         label.indentAnnotations = []
