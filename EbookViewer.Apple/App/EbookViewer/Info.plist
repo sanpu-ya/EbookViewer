@@ -87,6 +87,10 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- 通信を行わず、暗号 API も使わない。SHA-1 は EPUB の難読化フォントを戻す鍵を作るためのハッシュで、
+	     輸出規制の対象になる暗号にはあたらないため false を宣言する -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.books</string>
 	<key>LSMinimumSystemVersion</key>
