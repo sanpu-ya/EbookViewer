@@ -1,0 +1,32 @@
+#!/bin/sh
+#
+# 署名の Team ID が入ったままコミットされるのを防ぐ。
+# Xcode で Signing & Capabilities の Team を選ぶと project.pbxproj に
+# DEVELOPMENT_TEAM が書き戻されるため、ステージされた追加行を調べる。
+# 空の値 (DEVELOPMENT_TEAM = "";) は通す。
+#
+# 有効にする: git config core.hooksPath .githooks
+# 意図して通す: git commit --no-verify
+
+added=$(git diff --cached --no-color --diff-filter=ACM -U0 -- \
+    '*.pbxproj' '*.yml' '*.yaml' '*.plist' '*.entitlements' '*.xcconfig' \
+    | grep '^+' || true)
+
+team=$(printf '%s\n' "$added" \
+    | grep -E 'DEVELOPMENT_TEAM[[:space:]]*[=:]' \
+    | grep -vE 'DEVELOPMENT_TEAM[[:space:]]*[=:][[:space:]]*("")?;?[[:space:]]*$' \
+    || true)
+
+plist=$(printf '%s\n' "$added" | grep -E '<key>DevelopmentTeam</key>' || true)
+
+if [ -n "$team" ] || [ -n "$plist" ]; then
+    echo "pre-commit: 署名の Team ID がステージされています。" >&2
+    echo >&2
+    printf '%s\n' "$team" "$plist" | grep -v '^$' | sed 's/^/    /' >&2
+    echo >&2
+    echo "公開リポジトリに Team ID を入れないため、値を空にしてください" >&2
+    echo "(project.pbxproj なら空文字列、project.yml なら \"\")。" >&2
+    echo >&2
+    echo "意図したコミットなら git commit --no-verify で通せます。" >&2
+    exit 1
+fi

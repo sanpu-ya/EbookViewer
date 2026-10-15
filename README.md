@@ -23,6 +23,12 @@ Swift / SwiftUI で作られており、1 つのマルチプラットフォー�
 
 macOS 版は App Sandbox + Hardened Runtime で動作し、WKWebView が独自スキームの本文を読み込むために `com.apple.security.network.client` (Outgoing Connections) の権限が必要です。
 
+署名の Team ID をリポジトリに残さないため、`project.yml` と `project.pbxproj` の `DEVELOPMENT_TEAM` は空にしてあります。Xcode で Team を選ぶと `project.pbxproj` に書き戻されるので、コミットに混ざるのを防ぐ pre-commit フックを同梱しています。clone したら一度だけ有効にしてください:
+
+```bash
+git config core.hooksPath .githooks
+```
+
 `project.yml` を変更したら [XcodeGen](https://github.com/yonaskolb/XcodeGen) で再生成します:
 
 ```bash
