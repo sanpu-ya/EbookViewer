@@ -37,6 +37,10 @@ struct EbookViewerApp: App {
             if phase == .background || phase == .inactive { model.persistAll() }
         }
         .commands {
+            // 「EbookViewer について」の下にライセンス表示を置く
+            CommandGroup(after: .appInfo) {
+                Button("Licenses…") { model.licensesOpen = true }
+            }
             CommandGroup(replacing: .newItem) {
                 Button("Open…") { model.openRequested?() }
                     .keyboardShortcut("o", modifiers: .command)

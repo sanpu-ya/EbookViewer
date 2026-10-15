@@ -105,6 +105,8 @@ final class ReaderModel: BookContentProvider {
     var statusRight = ""
     var windowTitle = "EbookViewer"
     var tocOpen: Bool
+    /// ライセンス表示。開き閉じだけなので保存しない。
+    var licensesOpen = false
 
     @ObservationIgnored weak var web: WebBridge?
     @ObservationIgnored weak var text: TextBridge?

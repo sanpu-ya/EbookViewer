@@ -57,6 +57,9 @@ struct ContentView: View {
             Text(model.errorMessage ?? "")
         }
         .onDrop(of: [.fileURL], isTargeted: nil, perform: handleDrop)
+        .sheet(isPresented: $model.licensesOpen) {
+            LicensesView { model.licensesOpen = false }
+        }
     }
 
     /// Mac / iPad: 目次 (コミックはページ一覧) をサイドバーに出す。
@@ -342,12 +345,31 @@ struct ContentView: View {
             Divider()
             Button { model.fontDown() } label: { Label("Decrease Text Size", systemImage: "textformat.size.smaller") }
             Button { model.fontUp() } label: { Label("Increase Text Size", systemImage: "textformat.size.larger") }
+            aboutSection
             #endif
         } label: {
             Label("Display", systemImage: "gearshape")
         }
         .help("Text Engine, Theme, Font, Line Spacing")
     }
+
+    #if !os(macOS)
+    /// iOS にはアプリメニューがないので、バージョンとライセンスを設定メニューの末尾に置く。
+    @ViewBuilder
+    private var aboutSection: some View {
+        Divider()
+        Text(Self.versionLabel)
+        Button { model.licensesOpen = true } label: { Label("Licenses…", systemImage: "doc.text") }
+    }
+
+    /// 「EbookViewer 1.0 (1)」の形。
+    static var versionLabel: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? ""
+        let build = info?["CFBundleVersion"] as? String ?? ""
+        return "EbookViewer \(version) (\(build))"
+    }
+    #endif
 
     // MARK: - コミックの設定
 
@@ -485,6 +507,9 @@ struct ContentView: View {
                 Divider()
                 comicBackgroundPicker
             }
+            #if !os(macOS)
+            aboutSection
+            #endif
         } label: {
             Label("Comic", systemImage: "book")
         }

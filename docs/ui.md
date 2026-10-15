@@ -55,3 +55,14 @@ EbookViewer の操作とキー割り当て、表示の設定です。
 読書位置 (章とページ位置) と設定は `~/Library/Application Support/EbookViewer/` の `positions.json` `settings.json` に保存され
 (サンドボックス内では `~/Library/Containers/com.sanpu-ya.EbookViewer/Data/Library/Application Support/EbookViewer/`)、
 次回同じファイルを開くと復元されます。「最近開いたファイル」はセキュリティスコープ付きブックマークで保持するので、サンドボックス内でも再度開けます。
+
+## ライセンス表示
+
+同梱しているソフトウェアのライセンス原文をアプリ内で読めます。macOS はアプリメニューの「EbookViewer について」の下の「ライセンス…」、
+iOS / iPadOS はツールバーの「表示」(コミックでは「コミック」) メニューの末尾にあるバージョン表示の下の「ライセンス…」から開きます。
+一覧から選ぶと原文が等幅で表示され、選択してコピーできます。
+
+原文は [`App/EbookViewer/Licenses/`](../EbookViewer.Apple/App/EbookViewer/Licenses/) の `.txt` をそのままバンドルに入れたもので、
+EbookViewer 本体 (MIT)、stone_engine (MIT)、Unrar.swift (MIT)、unrar (UnRAR ライセンス) の 4 件です。
+unrar は配布物にライセンス全文を含めることが条件なので、この画面がその条件を満たします。
+ライセンスを足したり差し替えたりしたときは、`.txt` を置いて [`LicensesView.swift`](../EbookViewer.Apple/App/EbookViewer/LicensesView.swift) の `LicenseEntry.all` に 1 行足します。

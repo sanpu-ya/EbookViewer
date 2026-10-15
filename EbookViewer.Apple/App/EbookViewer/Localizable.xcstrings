@@ -112,6 +112,16 @@
         }
       }
     },
+    "CBR (RAR) extraction": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CBR (RAR) の展開"
+          }
+        }
+      }
+    },
     "Chapter %lld/%lld": {
       "localizations": {
         "ja": {
@@ -442,6 +452,16 @@
         }
       }
     },
+    "Japanese typesetting engine": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日本語組版エンジン"
+          }
+        }
+      }
+    },
     "Larger": {
       "localizations": {
         "ja": {
@@ -478,6 +498,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "左から右"
+          }
+        }
+      }
+    },
+    "Licenses": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライセンス"
+          }
+        }
+      }
+    },
+    "Licenses…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライセンス…"
           }
         }
       }
@@ -728,6 +768,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "前のページ"
+          }
+        }
+      }
+    },
+    "RAR decompression, bundled with Unrar.swift": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAR の展開 (Unrar.swift に同梱)"
           }
         }
       }
@@ -1008,6 +1058,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "この PDF はパスワードで保護されています。"
+          }
+        }
+      }
+    },
+    "This app": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリ"
           }
         }
       }

@@ -50,7 +50,7 @@ cd EbookViewer.Apple/EbookCore && swift test
 
 ## ライセンス
 
-MIT License です ([LICENSE](LICENSE))。利用しているソフトウェアは次のとおりです。
+MIT License です ([LICENSE](LICENSE))。利用しているソフトウェアは次のとおりで、原文はアプリ内の「ライセンス」画面でも読めます ([操作と画面](docs/ui.md#ライセンス表示))。
 
 - [stone_engine](https://github.com/sanpu-ya/stone_engine) (MIT License, Copyright (c) 2024 Nihon Design Center) — 日本語組版エンジン。本文の組版に使い、必要な部分を [`EbookCore/Sources/StoneEngine/`](EbookViewer.Apple/EbookCore/Sources/StoneEngine/) に取り込んでいます
 - [Unrar.swift](https://github.com/mtgto/Unrar.swift) (MIT License, Copyright (c) 2021 mtgto) — CBR (RAR) の展開。SwiftPM の依存として取得します。同梱の unrar 自体は UnRAR ライセンス (フリーウェア。RAR 圧縮アルゴリズムの再現には使えません) です
